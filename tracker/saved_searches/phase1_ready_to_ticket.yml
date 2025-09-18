@@ -1,0 +1,7 @@
+name: Phase 1 — Ready to Ticket
+filter:
+  include:
+    - status: open
+    - label: approved
+    - text: "PRD v1.0 — Authoring & Sign-off (Agent A)"
+notes: Triggered when Agent B marks the PRD meta issue as approved; used by Agent C to explode acceptance criteria into backlog tickets.

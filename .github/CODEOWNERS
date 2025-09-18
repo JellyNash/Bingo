@@ -1,0 +1,2 @@
+# Auto-reviewers for documentation assets
+/docs/** @agent-a @agent-b @agent-c
