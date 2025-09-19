@@ -1,0 +1,10 @@
+import { io } from "socket.io-client";
+const token = process.env.TOKEN;
+const url = "http://localhost:4000";
+const ns = "/screen";
+const socket = io(url + ns, { auth: { token } });
+socket.on("connect", () => console.log("connected", socket.id));
+socket.on("state:update", (s) => console.log("state:update", s));
+socket.on("draw:next", (d) => console.log("draw:next", d));
+socket.on("claim:result", (d) => console.log("claim:result", d));
+socket.on("disconnect", (r) => console.log("disconnect", r));
