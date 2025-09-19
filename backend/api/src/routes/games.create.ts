@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { randomUUID } from 'node:crypto';
 import { generateGameSecrets, generateUniquePin } from '../utils/game.js';
 import { prisma } from '../services/prisma.js';
 import { mapGame } from '../utils/mappers.js';
@@ -20,24 +19,33 @@ export default async function gamesCreate(fastify: FastifyInstance) {
     const body = createGameBody.parse(request.body ?? {});
 
     const pin = await generateUniquePin();
-    const gameId = randomUUID();
-    const { rngSeed, gameSignature } = generateGameSecrets(gameId);
-
     const requester = request.user as { sub?: string };
 
-    const game = await prisma.game.create({
-      data: {
-        id: gameId,
-        pin,
-        name: body.name,
-        maxPlayers: body.maxPlayers,
-        allowLateJoin: body.allowLateJoin,
-        autoDrawInterval: body.autoDrawInterval,
-        winnerLimit: body.winnerLimit,
-        rngSeed,
-        gameSignature,
-        createdBy: requester.sub,
-      },
+    // Transaction to ensure atomicity
+    const game = await prisma.$transaction(async (tx) => {
+      // First create the game to get the CUID
+      const newGame = await tx.game.create({
+        data: {
+          pin,
+          name: body.name,
+          maxPlayers: body.maxPlayers,
+          allowLateJoin: body.allowLateJoin,
+          autoDrawInterval: body.autoDrawInterval,
+          winnerLimit: body.winnerLimit,
+          rngSeed: 'pending', // temporary value
+          gameSignature: 'pending', // temporary value
+          createdBy: requester.sub,
+        },
+      });
+
+      // Generate secrets with the actual CUID
+      const { rngSeed, gameSignature } = generateGameSecrets(newGame.id);
+
+      // Update with the correct secrets
+      return await tx.game.update({
+        where: { id: newGame.id },
+        data: { rngSeed, gameSignature },
+      });
     });
 
     reply.code(201).send(mapGame(game));

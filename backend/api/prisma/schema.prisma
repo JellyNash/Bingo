@@ -279,7 +279,14 @@ model Session {
 
   // Session Details
   socketId      String?     @unique @db.VarChar(100)
-  resumeToken   String      @unique @db.VarChar(128) // JWT resume capability
+
+  // Token hashes for secure storage
+  resumeTokenHash  String?  @unique @db.Char(64)  // hex SHA-256
+  sessionTokenHash String?  @unique @db.Char(64)  // hex SHA-256
+
+  // Raw tokens (optional, non-unique)
+  resumeToken   String?     @db.Text // JWT resume capability
+  sessionToken  String?     @db.Text // Active session JWT
 
   // Connection Info
   ipAddress     String      @db.VarChar(45)
@@ -338,9 +345,9 @@ model AuditLog {
   // Relations
   game        Game?      @relation(fields: [gameId], references: [id], onDelete: SetNull)
   player      Player?    @relation(fields: [playerId], references: [id], onDelete: SetNull)
-  draw        Draw?      @relation(fields: [entityId], references: [id], onDelete: SetNull)
-  claim       Claim?     @relation(fields: [entityId], references: [id], onDelete: SetNull)
-  penalty     Penalty?   @relation(fields: [entityId], references: [id], onDelete: SetNull)
+  draw        Draw?      @relation(fields: [entityId], references: [id], onDelete: SetNull, map: "audit_log_draw_fkey")
+  claim       Claim?     @relation(fields: [entityId], references: [id], onDelete: SetNull, map: "audit_log_claim_fkey")
+  penalty     Penalty?   @relation(fields: [entityId], references: [id], onDelete: SetNull, map: "audit_log_penalty_fkey")
 
   @@index([gameId, timestamp])
   @@index([playerId, timestamp])

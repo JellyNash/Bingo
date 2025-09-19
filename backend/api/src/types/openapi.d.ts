@@ -614,6 +614,7 @@ export interface components {
             gameState: components["schemas"]["GameSnapshot"];
         };
         ResumeRequest: {
+            /** @description Opaque, non-JWT resume token (base64url), 32+ bytes */
             resumeToken: string;
         };
         ResumeResponse: {

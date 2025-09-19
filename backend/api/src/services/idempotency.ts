@@ -17,6 +17,7 @@ export async function saveIdempotentResponse<T = unknown>(key: string, record: I
     `idem:${key}`,
     JSON.stringify(record),
     'EX',
-    config.idempotencyTtlSec
+    config.idempotencyTtlSec,
+    'NX' // first writer wins
   );
 }

@@ -1,0 +1,643 @@
+openapi: 3.1.0
+info:
+  title: Bingo API
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    GameStatus:
+      type: string
+      enum: [LOBBY, OPEN, ACTIVE, PAUSED, COMPLETED, CANCELLED]
+    PlayerStatus:
+      type: string
+      enum: [ACTIVE, COOLDOWN, DISQUALIFIED, LEFT]
+    BingoPattern:
+      type: string
+      enum:
+        - ROW_1
+        - ROW_2
+        - ROW_3
+        - ROW_4
+        - ROW_5
+        - COL_1
+        - COL_2
+        - COL_3
+        - COL_4
+        - COL_5
+        - DIAGONAL_1
+        - DIAGONAL_2
+        - FOUR_CORNERS
+    Game:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Game identifier (CUID)
+        pin:
+          type: string
+          description: Six digit public PIN used by players to join
+        name:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/GameStatus'
+        maxPlayers:
+          type: integer
+        allowLateJoin:
+          type: boolean
+        autoDrawInterval:
+          type: integer
+          description: Interval in seconds when auto draw enabled
+        autoDrawEnabled:
+          type: boolean
+        winnerLimit:
+          type: integer
+        currentSequence:
+          type: integer
+        lastDrawAt:
+          type: string
+          format: date-time
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pausedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          nullable: true
+      required: [id, pin, status, maxPlayers, allowLateJoin, autoDrawInterval, autoDrawEnabled, winnerLimit, currentSequence, createdAt]
+    Player:
+      type: object
+      properties:
+        id:
+          type: string
+        gameId:
+          type: string
+        nickname:
+          type: string
+        status:
+          $ref: '#/components/schemas/PlayerStatus'
+        strikes:
+          type: integer
+        isDisqualified:
+          type: boolean
+        cooldownUntil:
+          type: string
+          format: date-time
+          nullable: true
+        joinedAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+      required: [id, gameId, nickname, status, strikes, isDisqualified, joinedAt, lastSeenAt]
+    BingoCard:
+      type: object
+      properties:
+        id:
+          type: string
+        playerId:
+          type: string
+        numbers:
+          type: array
+          items:
+            type: array
+            minItems: 5
+            maxItems: 5
+            items:
+              oneOf:
+                - type: integer
+                - type: string
+                  enum: [FREE]
+        cardSignature:
+          type: string
+        marks:
+          type: object
+          additionalProperties:
+            type: boolean
+        generatedAt:
+          type: string
+          format: date-time
+      required: [id, playerId, numbers, cardSignature, marks, generatedAt]
+    Draw:
+      type: object
+      properties:
+        id:
+          type: string
+        gameId:
+          type: string
+        sequence:
+          type: integer
+        letter:
+          type: string
+          enum: [B, I, N, G, O]
+        number:
+          type: integer
+        drawnAt:
+          type: string
+          format: date-time
+        drawnBy:
+          type: string
+          nullable: true
+        drawSignature:
+          type: string
+          nullable: true
+      required: [id, gameId, sequence, letter, number, drawnAt]
+    Claim:
+      type: object
+      properties:
+        id:
+          type: string
+        gameId:
+          type: string
+        playerId:
+          type: string
+        pattern:
+          $ref: '#/components/schemas/BingoPattern'
+        isValid:
+          type: boolean
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [PENDING, ACCEPTED, DENIED, SUPERSEDED]
+        validatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        validatedBy:
+          type: string
+          nullable: true
+        denialReason:
+          type: string
+          nullable: true
+        isWinner:
+          type: boolean
+        winPosition:
+          type: integer
+          nullable: true
+      required: [id, gameId, playerId, pattern, timestamp, status, isWinner]
+    Penalty:
+      type: object
+      properties:
+        id:
+          type: string
+        gameId:
+          type: string
+        playerId:
+          type: string
+        type:
+          type: string
+        reason:
+          type: string
+        severity:
+          type: integer
+        appliedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        isActive:
+          type: boolean
+      required: [id, gameId, playerId, type, reason, severity, appliedAt, isActive]
+    GameSnapshot:
+      type: object
+      properties:
+        game:
+          $ref: '#/components/schemas/Game'
+        draws:
+          type: array
+          items:
+            $ref: '#/components/schemas/Draw'
+        players:
+          type: array
+          items:
+            $ref: '#/components/schemas/Player'
+        recentClaims:
+          type: array
+          items:
+            $ref: '#/components/schemas/Claim'
+        winners:
+          type: array
+          items:
+            type: object
+            properties:
+              player:
+                $ref: '#/components/schemas/Player'
+              claim:
+                $ref: '#/components/schemas/Claim'
+            required: [player, claim]
+      required: [game, draws, players, recentClaims, winners]
+    CreateGameRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        maxPlayers:
+          type: integer
+          minimum: 1
+        allowLateJoin:
+          type: boolean
+        autoDrawInterval:
+          type: integer
+          minimum: 5
+          maximum: 20
+        winnerLimit:
+          type: integer
+          minimum: 1
+      additionalProperties: false
+    CreateGameResponse:
+      $ref: '#/components/schemas/Game'
+    JoinRequest:
+      type: object
+      required: [pin, nickname]
+      properties:
+        pin:
+          type: string
+          pattern: '^[0-9]{6}$'
+        nickname:
+          type: string
+          maxLength: 50
+        idempotencyKey:
+          type: string
+          maxLength: 128
+      additionalProperties: false
+    JoinResponse:
+      type: object
+      properties:
+        player:
+          $ref: '#/components/schemas/Player'
+        bingoCard:
+          $ref: '#/components/schemas/BingoCard'
+        sessionToken:
+          type: string
+        resumeToken:
+          type: string
+        gameState:
+          $ref: '#/components/schemas/GameSnapshot'
+      required: [player, bingoCard, sessionToken, resumeToken, gameState]
+    ResumeRequest:
+      type: object
+      required: [resumeToken]
+      properties:
+        resumeToken:
+          type: string
+          description: Opaque, non-JWT resume token (base64url), 32+ bytes
+          minLength: 43
+      additionalProperties: false
+    ResumeResponse:
+      type: object
+      properties:
+        player:
+          $ref: '#/components/schemas/Player'
+        gameState:
+          $ref: '#/components/schemas/GameSnapshot'
+        missedEvents:
+          type: array
+          items:
+            type: object
+        newSessionToken:
+          type: string
+        drawnNumbers:
+          type: array
+          items:
+            type: object
+            properties:
+              seq:
+                type: integer
+              num:
+                type: integer
+            required: [seq, num]
+        winners:
+          type: array
+          items:
+            type: object
+            properties:
+              playerId:
+                type: string
+              nickname:
+                type: string
+              rank:
+                type: integer
+              pattern:
+                $ref: '#/components/schemas/BingoPattern'
+            required: [playerId, nickname, rank, pattern]
+        gameStatus:
+          $ref: '#/components/schemas/GameStatus'
+      required: [player, gameState, missedEvents, newSessionToken, drawnNumbers, gameStatus]
+    AutoDrawRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+        intervalMs:
+          type: integer
+          minimum: 5000
+          maximum: 20000
+      additionalProperties: false
+    MarkRequest:
+      type: object
+      required: [position, marked]
+      properties:
+        position:
+          type: string
+          description: Cell identifier (FREE or letter+number)
+        marked:
+          type: boolean
+        idempotencyKey:
+          type: string
+          maxLength: 128
+      additionalProperties: false
+    MarkResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        marks:
+          type: object
+          additionalProperties:
+            type: boolean
+        eligiblePatterns:
+          type: array
+          items:
+            $ref: '#/components/schemas/BingoPattern'
+      required: [success]
+    ClaimRequest:
+      type: object
+      required: [pattern]
+      properties:
+        pattern:
+          $ref: '#/components/schemas/BingoPattern'
+        idempotencyKey:
+          type: string
+          maxLength: 128
+      additionalProperties: false
+    ClaimResponse:
+      type: object
+      properties:
+        claim:
+          $ref: '#/components/schemas/Claim'
+        message:
+          type: string
+        strikes:
+          type: integer
+        cooldownMs:
+          type: integer
+      required: [claim]
+    PenaltyRequest:
+      type: object
+      required: [playerId, type, reason]
+      properties:
+        playerId:
+          type: string
+        type:
+          type: string
+        reason:
+          type: string
+        severity:
+          type: integer
+          minimum: 1
+          maximum: 3
+        durationMinutes:
+          type: integer
+          minimum: 1
+      additionalProperties: false
+paths:
+  /games:
+    post:
+      summary: Create a game
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGameRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateGameResponse'
+  /games/{id}/open:
+    post:
+      summary: Open game for play
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Game opened
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Game'
+  /join:
+    post:
+      summary: Join a game by PIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinRequest'
+      responses:
+        '201':
+          description: Joined successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinResponse'
+  /resume:
+    post:
+      summary: Resume a prior session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResumeRequest'
+      responses:
+        '200':
+          description: Resume payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResumeResponse'
+  /games/{id}/draw:
+    post:
+      summary: Draw the next number manually
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Drawn number
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Draw'
+  /games/{id}/auto-draw:
+    post:
+      summary: Enable or disable auto draw
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutoDrawRequest'
+      responses:
+        '200':
+          description: Updated game configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Game'
+  /games/{id}/pause:
+    post:
+      summary: Pause an active game
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Game paused
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Game'
+  /games/{id}/undo:
+    post:
+      summary: Undo the last draw (not implemented in MVP)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '501':
+          description: Not implemented
+  /cards/{cardId}/mark:
+    post:
+      summary: Mark or unmark a number on a card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkRequest'
+      responses:
+        '200':
+          description: Mark updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarkResponse'
+  /cards/{cardId}/claim:
+    post:
+      summary: Claim Bingo for a card
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimRequest'
+      responses:
+        '200':
+          description: Claim processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimResponse'
+  /games/{id}/penalty:
+    post:
+      summary: Apply a penalty to a player
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PenaltyRequest'
+      responses:
+        '201':
+          description: Penalty applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Penalty'
+  /games/{id}/snapshot:
+    get:
+      summary: Fetch the full game snapshot
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Game snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameSnapshot'
