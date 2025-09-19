@@ -1,0 +1,1430 @@
+openapi: 3.1.0
+info:
+  title: Bingo Platform API
+  version: 1.0.0
+  description: |
+    REST API for the Bingo Platform - Real-time multiplayer Bingo system
+    with server-authoritative logic, supporting 1000+ concurrent players.
+
+    **Key Features:**
+    - Server-authoritative game logic
+    - Cryptographically secure card generation
+    - Real-time claim validation
+    - Comprehensive penalty system
+    - Audit logging and compliance
+
+    **Performance Targets:**
+    - Draw → UI propagation: <200ms average
+    - Claim validation: <100ms server-side
+    - Player join: <500ms from PIN to game entry
+  contact:
+    name: Bingo Platform Team
+    email: support@bingo-platform.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: https://bingo.local:3000
+    description: Offline/LAN deployment
+  - url: https://api.bingo-platform.com
+    description: Production server
+
+paths:
+  # ================================
+  # GAME LIFECYCLE
+  # ================================
+
+  /games:
+    post:
+      summary: Create a new game
+      description: |
+        Creates a new Bingo game with specified configuration.
+        Generates unique 6-digit PIN and cryptographic game seed.
+      operationId: createGame
+      tags: [Games]
+      security:
+        - gamemaster: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGameRequest'
+      responses:
+        '201':
+          description: Game created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Game'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+    get:
+      summary: List games
+      description: List games with optional filtering
+      operationId: listGames
+      tags: [Games]
+      security:
+        - gamemaster: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/GameStatus'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Games retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameListResponse'
+
+  /games/{gameId}:
+    get:
+      summary: Get game details
+      description: Retrieve detailed information about a specific game
+      operationId: getGame
+      tags: [Games]
+      security:
+        - jwt: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Game details retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /games/{gameId}/open:
+    post:
+      summary: Open game for players
+      description: |
+        Transitions game from LOBBY to OPEN status.
+        Players can now join the game.
+      operationId: openGame
+      tags: [Games]
+      security:
+        - gamemaster: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Game opened successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Game'
+        '400':
+          description: Game cannot be opened (invalid state)
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /games/{gameId}/start:
+    post:
+      summary: Start the game
+      description: |
+        Begins active gameplay. No more players can join after this point
+        (unless allowLateJoin is enabled and no claims made yet).
+      operationId: startGame
+      tags: [Games]
+      security:
+        - gamemaster: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Game started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Game'
+        '400':
+          description: Game cannot be started
+
+  /games/{gameId}/pause:
+    post:
+      summary: Pause the game
+      description: Temporarily pause an active game
+      operationId: pauseGame
+      tags: [Games]
+      security:
+        - gamemaster: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Game paused successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Game'
+
+  /games/{gameId}/resume:
+    post:
+      summary: Resume paused game
+      description: Resume a paused game
+      operationId: resumeGame
+      tags: [Games]
+      security:
+        - gamemaster: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Game resumed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Game'
+
+  /games/{gameId}/draw:
+    post:
+      summary: Draw next number
+      description: |
+        Manually draw the next number in sequence.
+        Uses cryptographically secure RNG with game seed.
+      operationId: drawNumber
+      tags: [Games]
+      security:
+        - gamemaster: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Number drawn successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Draw'
+        '400':
+          description: Cannot draw (game not active or complete)
+
+  /games/{gameId}/auto-draw:
+    post:
+      summary: Toggle auto-draw
+      description: Enable/disable automatic number drawing
+      operationId: toggleAutoDraw
+      tags: [Games]
+      security:
+        - gamemaster: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                interval:
+                  type: integer
+                  minimum: 5
+                  maximum: 20
+                  description: Auto-draw interval in seconds
+              required: [enabled]
+      responses:
+        '200':
+          description: Auto-draw settings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Game'
+
+  /games/{gameId}/snapshot:
+    get:
+      summary: Get game state snapshot
+      description: |
+        Retrieve complete current game state for display clients
+        or reconnection scenarios.
+      operationId: getGameSnapshot
+      tags: [Games]
+      security:
+        - jwt: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+      responses:
+        '200':
+          description: Game snapshot retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameSnapshot'
+
+  # ================================
+  # PLAYER MANAGEMENT
+  # ================================
+
+  /games/{pin}/join:
+    post:
+      summary: Join game by PIN
+      description: |
+        Join a game using 6-digit PIN and nickname.
+        Generates HMAC-signed Bingo card and JWT session token.
+      operationId: joinGame
+      tags: [Players]
+      parameters:
+        - name: pin
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[0-9]{6}$'
+            description: 6-digit game PIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinGameRequest'
+      responses:
+        '201':
+          description: Successfully joined game
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinGameResponse'
+        '400':
+          description: Invalid request (nickname taken, game full, etc.)
+        '404':
+          description: Game not found or not accepting players
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /games/{gameId}/players/{playerId}/resume:
+    post:
+      summary: Resume player session
+      description: |
+        Resume a player session using resume token.
+        Replays missed events and synchronizes state.
+      operationId: resumePlayer
+      tags: [Players]
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/PlayerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                resumeToken:
+                  type: string
+                  description: JWT resume token
+              required: [resumeToken]
+      responses:
+        '200':
+          description: Session resumed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResumeResponse'
+        '400':
+          description: Invalid or expired resume token
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /games/{gameId}/players/{playerId}/mark:
+    post:
+      summary: Mark number on card
+      description: |
+        Mark or unmark a number on player's Bingo card.
+        Only allows marking of called numbers.
+      operationId: markNumber
+      tags: [Players]
+      security:
+        - jwt: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/PlayerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkRequest'
+      responses:
+        '200':
+          description: Number marked/unmarked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarkResponse'
+        '400':
+          description: Invalid mark (number not called, already marked, etc.)
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /games/{gameId}/players/{playerId}/claim:
+    post:
+      summary: Claim Bingo
+      description: |
+        Submit a Bingo claim for pattern validation.
+        Claims are timestamped and validated server-side.
+      operationId: claimBingo
+      tags: [Players]
+      security:
+        - jwt: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/PlayerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimRequest'
+      responses:
+        '200':
+          description: Claim submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimResponse'
+        '400':
+          description: Invalid claim or player in cooldown
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # ================================
+  # ADMIN & MODERATION
+  # ================================
+
+  /games/{gameId}/claims:
+    get:
+      summary: List game claims
+      description: Retrieve all claims for administrative review
+      operationId: listClaims
+      tags: [Admin]
+      security:
+        - gamemaster: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ClaimStatus'
+      responses:
+        '200':
+          description: Claims retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimListResponse'
+
+  /games/{gameId}/claims/{claimId}/review:
+    post:
+      summary: Review claim
+      description: |
+        Manually review and override claim decision.
+        Used for disputed claims or error correction.
+      operationId: reviewClaim
+      tags: [Admin]
+      security:
+        - gamemaster: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - name: claimId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClaimReviewRequest'
+      responses:
+        '200':
+          description: Claim reviewed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Claim'
+
+  /games/{gameId}/players/{playerId}/penalty:
+    post:
+      summary: Apply penalty
+      description: Apply manual penalty to player
+      operationId: applyPenalty
+      tags: [Admin]
+      security:
+        - gamemaster: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/PlayerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PenaltyRequest'
+      responses:
+        '201':
+          description: Penalty applied successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Penalty'
+
+  /games/{gameId}/players/{playerId}/kick:
+    post:
+      summary: Kick player
+      description: Remove player from game
+      operationId: kickPlayer
+      tags: [Admin]
+      security:
+        - gamemaster: []
+      parameters:
+        - $ref: '#/components/parameters/GameId'
+        - $ref: '#/components/parameters/PlayerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 200
+              required: [reason]
+      responses:
+        '200':
+          description: Player kicked successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ================================
+  # SYSTEM & HEALTH
+  # ================================
+
+  /health:
+    get:
+      summary: Health check
+      description: System health and readiness check
+      operationId: healthCheck
+      tags: [System]
+      responses:
+        '200':
+          description: System healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: System unhealthy
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Prometheus-compatible metrics endpoint
+      operationId: getMetrics
+      tags: [System]
+      responses:
+        '200':
+          description: Metrics in Prometheus format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  schemas:
+    # ================================
+    # CORE ENTITIES
+    # ================================
+
+    Game:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique game identifier
+        pin:
+          type: string
+          pattern: '^[0-9]{6}$'
+          description: 6-digit game PIN
+        name:
+          type: string
+          maxLength: 100
+          description: Optional game name
+        status:
+          $ref: '#/components/schemas/GameStatus'
+        maxPlayers:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          default: 1000
+        allowLateJoin:
+          type: boolean
+          default: true
+        autoDrawInterval:
+          type: integer
+          minimum: 5
+          maximum: 20
+          default: 8
+          description: Auto-draw interval in seconds
+        winnerLimit:
+          type: integer
+          minimum: 1
+          default: 1
+        currentSequence:
+          type: integer
+          minimum: 0
+        lastDrawAt:
+          type: string
+          format: date-time
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+          description: GameMaster identifier
+      required:
+        - id
+        - pin
+        - status
+        - maxPlayers
+        - allowLateJoin
+        - autoDrawInterval
+        - winnerLimit
+        - currentSequence
+        - createdAt
+
+    GameStatus:
+      type: string
+      enum:
+        - LOBBY
+        - OPEN
+        - ACTIVE
+        - PAUSED
+        - COMPLETED
+        - CANCELLED
+      description: |
+        Game lifecycle status:
+        - LOBBY: Being configured
+        - OPEN: Accepting players
+        - ACTIVE: Game in progress
+        - PAUSED: Temporarily stopped
+        - COMPLETED: Game finished
+        - CANCELLED: Game aborted
+
+    Player:
+      type: object
+      properties:
+        id:
+          type: string
+        gameId:
+          type: string
+        nickname:
+          type: string
+          maxLength: 50
+        status:
+          $ref: '#/components/schemas/PlayerStatus'
+        strikes:
+          type: integer
+          minimum: 0
+        isDisqualified:
+          type: boolean
+        cooldownUntil:
+          type: string
+          format: date-time
+          nullable: true
+        joinedAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - gameId
+        - nickname
+        - status
+        - strikes
+        - isDisqualified
+        - joinedAt
+        - lastSeenAt
+
+    PlayerStatus:
+      type: string
+      enum:
+        - ACTIVE
+        - COOLDOWN
+        - DISQUALIFIED
+        - LEFT
+
+    BingoCard:
+      type: object
+      properties:
+        id:
+          type: string
+        playerId:
+          type: string
+        numbers:
+          type: array
+          description: 5x5 grid of Bingo numbers
+          items:
+            type: array
+            items:
+              oneOf:
+                - type: integer
+                  minimum: 1
+                  maximum: 75
+                - type: string
+                  enum: ["FREE"]
+          minItems: 5
+          maxItems: 5
+        cardSignature:
+          type: string
+          description: HMAC signature for card integrity
+        marks:
+          type: object
+          description: Player's marked numbers
+          additionalProperties:
+            type: boolean
+        generatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - playerId
+        - numbers
+        - cardSignature
+        - marks
+        - generatedAt
+
+    Draw:
+      type: object
+      properties:
+        id:
+          type: string
+        gameId:
+          type: string
+        sequence:
+          type: integer
+          description: Draw order within game
+        letter:
+          type: string
+          enum: ["B", "I", "N", "G", "O"]
+        number:
+          type: integer
+          minimum: 1
+          maximum: 75
+        drawnAt:
+          type: string
+          format: date-time
+        drawnBy:
+          type: string
+          description: GameMaster ID or 'AUTO'
+      required:
+        - id
+        - gameId
+        - sequence
+        - letter
+        - number
+        - drawnAt
+
+    Claim:
+      type: object
+      properties:
+        id:
+          type: string
+        gameId:
+          type: string
+        playerId:
+          type: string
+        pattern:
+          $ref: '#/components/schemas/BingoPattern'
+        isValid:
+          type: boolean
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+          description: Claim submission timestamp (microsecond precision)
+        status:
+          $ref: '#/components/schemas/ClaimStatus'
+        validatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        validatedBy:
+          type: string
+          nullable: true
+        denialReason:
+          type: string
+          maxLength: 200
+          nullable: true
+        isWinner:
+          type: boolean
+        winPosition:
+          type: integer
+          minimum: 1
+          nullable: true
+      required:
+        - id
+        - gameId
+        - playerId
+        - pattern
+        - timestamp
+        - status
+        - isWinner
+
+    BingoPattern:
+      type: string
+      enum:
+        - ROW_1
+        - ROW_2
+        - ROW_3
+        - ROW_4
+        - ROW_5
+        - COL_1
+        - COL_2
+        - COL_3
+        - COL_4
+        - COL_5
+        - DIAGONAL_1
+        - DIAGONAL_2
+        - FOUR_CORNERS
+        - FULL_CARD
+
+    ClaimStatus:
+      type: string
+      enum:
+        - PENDING
+        - ACCEPTED
+        - DENIED
+        - SUPERSEDED
+
+    Penalty:
+      type: object
+      properties:
+        id:
+          type: string
+        gameId:
+          type: string
+        playerId:
+          type: string
+        type:
+          $ref: '#/components/schemas/PenaltyType'
+        reason:
+          type: string
+          maxLength: 200
+        severity:
+          type: integer
+          minimum: 1
+          description: Strike count for this penalty
+        appliedAt:
+          type: string
+          format: date-time
+        appliedBy:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        isActive:
+          type: boolean
+      required:
+        - id
+        - gameId
+        - playerId
+        - type
+        - reason
+        - severity
+        - appliedAt
+        - appliedBy
+        - isActive
+
+    PenaltyType:
+      type: string
+      enum:
+        - FALSE_CLAIM
+        - RATE_LIMIT
+        - SUSPICIOUS
+        - MANUAL
+        - AUTO_STRIKE
+
+    # ================================
+    # REQUEST/RESPONSE SCHEMAS
+    # ================================
+
+    CreateGameRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        maxPlayers:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          default: 1000
+        allowLateJoin:
+          type: boolean
+          default: true
+        autoDrawInterval:
+          type: integer
+          minimum: 5
+          maximum: 20
+          default: 8
+        winnerLimit:
+          type: integer
+          minimum: 1
+          default: 1
+
+    JoinGameRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+          minLength: 1
+          maxLength: 50
+          pattern: '^[a-zA-Z0-9_\\-\\s]+$'
+        idempotencyKey:
+          type: string
+          maxLength: 128
+          description: Client-provided idempotency key
+      required:
+        - nickname
+
+    JoinGameResponse:
+      type: object
+      properties:
+        player:
+          $ref: '#/components/schemas/Player'
+        bingoCard:
+          $ref: '#/components/schemas/BingoCard'
+        sessionToken:
+          type: string
+          description: JWT session token
+        resumeToken:
+          type: string
+          description: JWT token for session resume
+        gameState:
+          $ref: '#/components/schemas/GameSnapshot'
+      required:
+        - player
+        - bingoCard
+        - sessionToken
+        - resumeToken
+        - gameState
+
+    MarkRequest:
+      type: object
+      properties:
+        position:
+          type: string
+          pattern: '^[BINGO][0-9]{1,2}$'
+          description: 'Position like "B15", "N45", or "FREE"'
+        marked:
+          type: boolean
+          description: true to mark, false to unmark
+        idempotencyKey:
+          type: string
+          maxLength: 128
+      required:
+        - position
+        - marked
+
+    MarkResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        marks:
+          type: object
+          description: Updated marks object
+          additionalProperties:
+            type: boolean
+        eligiblePatterns:
+          type: array
+          items:
+            $ref: '#/components/schemas/BingoPattern'
+          description: Patterns player can now claim
+      required:
+        - success
+        - marks
+        - eligiblePatterns
+
+    ClaimRequest:
+      type: object
+      properties:
+        pattern:
+          $ref: '#/components/schemas/BingoPattern'
+        idempotencyKey:
+          type: string
+          maxLength: 128
+      required:
+        - pattern
+
+    ClaimResponse:
+      type: object
+      properties:
+        claim:
+          $ref: '#/components/schemas/Claim'
+        message:
+          type: string
+          description: Human-readable response message
+      required:
+        - claim
+        - message
+
+    ClaimReviewRequest:
+      type: object
+      properties:
+        action:
+          type: string
+          enum: [accept, deny, supersede]
+        reason:
+          type: string
+          maxLength: 200
+        overrideWinner:
+          type: boolean
+          default: false
+      required:
+        - action
+
+    PenaltyRequest:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/PenaltyType'
+        reason:
+          type: string
+          maxLength: 200
+        severity:
+          type: integer
+          minimum: 1
+          maximum: 3
+          default: 1
+        durationMinutes:
+          type: integer
+          minimum: 1
+          maximum: 1440
+          description: Penalty duration in minutes (optional)
+      required:
+        - type
+        - reason
+
+    ResumeResponse:
+      type: object
+      properties:
+        player:
+          $ref: '#/components/schemas/Player'
+        gameState:
+          $ref: '#/components/schemas/GameSnapshot'
+        missedEvents:
+          type: array
+          items:
+            $ref: '#/components/schemas/GameEvent'
+        newSessionToken:
+          type: string
+      required:
+        - player
+        - gameState
+        - missedEvents
+        - newSessionToken
+
+    GameSnapshot:
+      type: object
+      properties:
+        game:
+          $ref: '#/components/schemas/Game'
+        draws:
+          type: array
+          items:
+            $ref: '#/components/schemas/Draw'
+        players:
+          type: array
+          items:
+            $ref: '#/components/schemas/Player'
+        recentClaims:
+          type: array
+          items:
+            $ref: '#/components/schemas/Claim'
+        winners:
+          type: array
+          items:
+            type: object
+            properties:
+              player:
+                $ref: '#/components/schemas/Player'
+              claim:
+                $ref: '#/components/schemas/Claim'
+      required:
+        - game
+        - draws
+        - players
+        - recentClaims
+        - winners
+
+    GameEvent:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [draw, claim, penalty, player_join, player_leave, game_status]
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          description: Event-specific payload
+      required:
+        - type
+        - timestamp
+        - data
+
+    GameListResponse:
+      type: object
+      properties:
+        games:
+          type: array
+          items:
+            $ref: '#/components/schemas/Game'
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required:
+        - games
+        - total
+        - limit
+        - offset
+
+    GameDetail:
+      allOf:
+        - $ref: '#/components/schemas/Game'
+        - type: object
+          properties:
+            playerCount:
+              type: integer
+              minimum: 0
+            draws:
+              type: array
+              items:
+                $ref: '#/components/schemas/Draw'
+            recentClaims:
+              type: array
+              items:
+                $ref: '#/components/schemas/Claim'
+            statistics:
+              type: object
+              properties:
+                avgClaimTime:
+                  type: number
+                  description: Average claim processing time in ms
+                totalStrikes:
+                  type: integer
+                activeConnections:
+                  type: integer
+          required:
+            - playerCount
+            - draws
+            - recentClaims
+            - statistics
+
+    ClaimListResponse:
+      type: object
+      properties:
+        claims:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Claim'
+              - type: object
+                properties:
+                  player:
+                    $ref: '#/components/schemas/Player'
+        total:
+          type: integer
+        pendingCount:
+          type: integer
+        acceptedCount:
+          type: integer
+        deniedCount:
+          type: integer
+      required:
+        - claims
+        - total
+        - pendingCount
+        - acceptedCount
+        - deniedCount
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        uptime:
+          type: integer
+          description: Uptime in seconds
+        checks:
+          type: object
+          properties:
+            database:
+              $ref: '#/components/schemas/HealthCheck'
+            redis:
+              $ref: '#/components/schemas/HealthCheck'
+            websocket:
+              $ref: '#/components/schemas/HealthCheck'
+      required:
+        - status
+        - timestamp
+        - version
+        - uptime
+        - checks
+
+    HealthCheck:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [up, down, degraded]
+        responseTime:
+          type: number
+          description: Response time in milliseconds
+        lastChecked:
+          type: string
+          format: date-time
+        error:
+          type: string
+          nullable: true
+      required:
+        - status
+        - responseTime
+        - lastChecked
+
+    # ================================
+    # ERROR SCHEMAS
+    # ================================
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          description: Additional error context
+          nullable: true
+        timestamp:
+          type: string
+          format: date-time
+        requestId:
+          type: string
+          description: Request tracking ID
+      required:
+        - error
+        - message
+        - timestamp
+        - requestId
+
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/Error'
+        - type: object
+          properties:
+            validationErrors:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  code:
+                    type: string
+                  message:
+                    type: string
+                required:
+                  - field
+                  - code
+                  - message
+          required:
+            - validationErrors
+
+  parameters:
+    GameId:
+      name: gameId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique game identifier
+
+    PlayerId:
+      name: playerId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique player identifier
+
+  responses:
+    BadRequest:
+      description: Bad request - validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+    Unauthorized:
+      description: Unauthorized - invalid or missing authentication
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: UNAUTHORIZED
+            message: Invalid or missing JWT token
+            timestamp: '2025-09-19T10:30:00Z'
+            requestId: req_123456789
+
+    Forbidden:
+      description: Forbidden - insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: NOT_FOUND
+            message: Game not found
+            timestamp: '2025-09-19T10:30:00Z'
+            requestId: req_123456789
+
+    Conflict:
+      description: Conflict - resource state conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds until rate limit resets
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+          description: Rate limit ceiling
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+          description: Remaining requests in window
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: RATE_LIMITED
+            message: Too many requests - please slow down
+            details:
+              retryAfter: 60
+              limit: 100
+              remaining: 0
+            timestamp: '2025-09-19T10:30:00Z'
+            requestId: req_123456789
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  securitySchemes:
+    jwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from joining a game.
+        Token contains player-scoped claims and expires after 30 minutes.
+
+        Example header: `Authorization: Bearer eyJhbGciOiJIUzI1NiIs...`
+
+    gamemaster:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token with GameMaster privileges.
+        Required for administrative operations.
+
+        Example header: `Authorization: Bearer eyJhbGciOiJIUzI1NiIs...`
+
+security:
+  - jwt: []
+
+tags:
+  - name: Games
+    description: Game lifecycle management
+  - name: Players
+    description: Player operations and session management
+  - name: Admin
+    description: Administrative and moderation operations
+  - name: System
+    description: System health and monitoring
