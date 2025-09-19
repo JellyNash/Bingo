@@ -1,167 +1,94 @@
-import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
-import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { useEffect, useState } from "react";
 import { connectConsole } from "./lib.socket";
 import { apiPost } from "./lib.api";
+const Bar = ({ show, text }) => show ? _jsx("div", { className: "fixed top-0 inset-x-0 text-center bg-yellow-500/20 text-yellow-200 py-1 text-sm", children: text }) : null;
+const Pill = ({ children }) => _jsx("span", { className: "px-2.5 py-1 rounded-full bg-white/10 border border-white/20 text-xs", children: children });
 export default function App() {
-    const [token, setToken] = useState("");
+    const params = new URLSearchParams(location.search);
+    const token = params.get("token") ?? "";
+    const gameId = params.get("g") ?? "42";
     const [connected, setConnected] = useState(false);
-    const [gameState, setGameState] = useState({
-        status: "lobby",
-        drawnNumbers: [],
-        totalPlayers: 0,
-        activePlayers: 0
-    });
+    const [numbers, setNumbers] = useState([]);
     const [claims, setClaims] = useState([]);
-    const [autoDrawInterval, setAutoDrawInterval] = useState(null);
-    const [autoDrawEnabled, setAutoDrawEnabled] = useState(false);
-    const [isDrawing, setIsDrawing] = useState(false);
-    const [showReconnect, setShowReconnect] = useState(false);
-    const socketRef = useRef(null);
-    const autoDrawRef = useRef(null);
-    // Initialize socket connection
+    const [auto, setAuto] = useState(false);
+    const [intervalMs, setIntervalMs] = useState(5000);
+    const [busy, setBusy] = useState(false);
+    const [log, setLog] = useState([]);
     useEffect(() => {
         if (!token)
             return;
-        try {
-            const socket = connectConsole("/console", token);
-            socketRef.current = socket;
-            socket.on("connect", () => {
-                console.log("Connected to GameMaster Console");
-                setConnected(true);
-                setShowReconnect(false);
-            });
-            socket.on("disconnect", () => {
-                console.log("Disconnected from GameMaster Console");
-                setConnected(false);
-                setShowReconnect(true);
-            });
-            socket.on("state:update", (data) => {
-                setGameState(data);
-            });
-            socket.on("draw:next", (data) => {
-                setGameState(prev => ({
-                    ...prev,
-                    currentNumber: data.value,
-                    drawnNumbers: [...prev.drawnNumbers, data.value]
-                }));
-                setIsDrawing(false);
-            });
-            socket.on("claim:result", (data) => {
-                if (data.nickname && data.pattern !== undefined && data.win !== undefined) {
-                    const newClaim = {
-                        id: data.claimId || Date.now(),
-                        nickname: data.nickname,
-                        pattern: data.pattern,
-                        win: data.win,
-                        cardId: data.cardId || 0,
-                        timestamp: new Date().toLocaleTimeString()
-                    };
-                    setClaims(prev => [newClaim, ...prev.slice(0, 9)]); // Keep last 10 claims
-                }
-            });
-            return () => {
-                socket.disconnect();
-            };
-        }
-        catch (error) {
-            console.error("Failed to connect:", error);
-            setShowReconnect(true);
-        }
-    }, [token]);
-    // Auto-draw functionality
-    useEffect(() => {
-        if (autoDrawEnabled && gameState.status === "active" && connected) {
-            autoDrawRef.current = setInterval(() => {
-                handleDrawNext();
-            }, (autoDrawInterval || 5) * 1000);
-        }
-        else {
-            if (autoDrawRef.current) {
-                clearInterval(autoDrawRef.current);
-                autoDrawRef.current = null;
-            }
-        }
+        const s = connectConsole("/console", token);
+        s.on("connect", () => setConnected(true));
+        s.io.on("reconnect_attempt", () => setConnected(false));
+        s.io.on("reconnect", () => setConnected(true));
+        s.on("draw:next", ({ value }) => {
+            setNumbers((n) => [...n, value]);
+            pushLog(`Draw: ${value}`);
+        });
+        s.on("claim:result", (payload) => {
+            // when server broadcasts resolved claims, show in a feed
+            pushLog(`Claim result: ${payload.nickname ?? "?"} • ${payload.win ? "APPROVED" : "DENIED"} (${payload.pattern ?? "-"})`);
+            // keep a short feed only
+            setClaims((c) => [{ claimId: payload.claimId, nickname: payload.nickname, pattern: payload.pattern, win: payload.win }, ...c].slice(0, 6));
+        });
         return () => {
-            if (autoDrawRef.current) {
-                clearInterval(autoDrawRef.current);
-            }
+            s.close();
         };
-    }, [autoDrawEnabled, autoDrawInterval, gameState.status, connected]);
-    const handleDrawNext = async () => {
-        if (!connected || isDrawing || gameState.status !== "active")
-            return;
-        setIsDrawing(true);
-        try {
-            await apiPost("/game/draw", token);
-        }
-        catch (error) {
-            console.error("Failed to draw next number:", error);
-            setIsDrawing(false);
-        }
-    };
-    const handlePauseGame = async () => {
-        try {
-            await apiPost("/game/pause", token);
-        }
-        catch (error) {
-            console.error("Failed to pause game:", error);
-        }
-    };
-    const handleResumeGame = async () => {
-        try {
-            await apiPost("/game/resume", token);
-        }
-        catch (error) {
-            console.error("Failed to resume game:", error);
-        }
-    };
-    const handleStartGame = async () => {
-        try {
-            await apiPost("/game/start", token);
-        }
-        catch (error) {
-            console.error("Failed to start game:", error);
-        }
-    };
-    const handleEndGame = async () => {
-        try {
-            await apiPost("/game/end", token);
-        }
-        catch (error) {
-            console.error("Failed to end game:", error);
-        }
-    };
-    const toggleAutoDraw = () => {
-        setAutoDrawEnabled(!autoDrawEnabled);
-    };
-    if (!token) {
-        return (_jsx("div", { className: "min-h-screen flex items-center justify-center p-4", children: _jsxs("div", { className: "bg-card border border-white/20 rounded-xl p-8 w-full max-w-md", children: [_jsx("h1", { className: "text-2xl font-bold text-center mb-6 text-accent", children: "GameMaster Console" }), _jsxs("div", { className: "space-y-4", children: [_jsx("input", { type: "text", placeholder: "Enter JWT Token", value: token, onChange: (e) => setToken(e.target.value), className: "w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-white/50 focus:border-accent focus:outline-none" }), _jsx("button", { onClick: () => token && setToken(token), disabled: !token, className: "w-full bg-accent text-black font-semibold py-3 rounded-lg hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed", children: "Connect" })] })] }) }));
+    }, [token]);
+    function pushLog(line) {
+        setLog((l) => [new Date().toLocaleTimeString() + "  " + line, ...l].slice(0, 12));
     }
-    return (_jsxs("div", { className: "min-h-screen p-6", children: [_jsxs("div", { className: "flex items-center justify-between mb-8", children: [_jsx("h1", { className: "text-3xl font-bold text-accent", children: "GameMaster Console" }), _jsxs("div", { className: "flex items-center gap-4", children: [_jsxs("div", { className: `flex items-center gap-2 px-3 py-1 rounded-full text-sm ${connected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`, children: [_jsx("div", { className: `w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}` }), connected ? 'Connected' : 'Disconnected'] }), _jsxs("div", { className: "text-sm text-white/70", children: ["Players: ", gameState.activePlayers, "/", gameState.totalPlayers] })] })] }), _jsxs("div", { className: "grid grid-cols-1 lg:grid-cols-3 gap-6", children: [_jsxs("div", { className: "lg:col-span-2 space-y-6", children: [_jsxs("div", { className: "bg-card border border-white/20 rounded-xl p-8 text-center", children: [_jsx("h2", { className: "text-xl font-semibold mb-4", children: "Current Number" }), _jsx(motion.div, { initial: { scale: 0.8, opacity: 0 }, animate: { scale: 1, opacity: 1 }, className: "text-8xl font-bold text-accent mb-4", children: gameState.currentNumber || "--" }, gameState.currentNumber), _jsxs("div", { className: "text-sm text-white/70", children: [gameState.drawnNumbers.length, " numbers drawn"] })] }), _jsxs("div", { className: "bg-card border border-white/20 rounded-xl p-6", children: [_jsx("h2", { className: "text-xl font-semibold mb-4", children: "Draw Controls" }), _jsxs("div", { className: "grid grid-cols-2 gap-4 mb-6", children: [_jsx("button", { onClick: handleDrawNext, disabled: !connected || isDrawing || gameState.status !== "active", className: "bg-accent text-black font-semibold py-4 rounded-lg hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2", children: isDrawing ? (_jsxs(_Fragment, { children: [_jsx("div", { className: "w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" }), "Drawing..."] })) : ("Draw Next") }), _jsx("button", { onClick: gameState.status === "paused" ? handleResumeGame : handlePauseGame, disabled: !connected || gameState.status === "lobby" || gameState.status === "finished", className: "bg-yellow-500 text-black font-semibold py-4 rounded-lg hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed", children: gameState.status === "paused" ? "Resume" : "Pause" })] }), _jsx("div", { className: "border-t border-white/20 pt-4", children: _jsxs("div", { className: "flex items-center justify-between mb-4", children: [_jsxs("label", { className: "flex items-center gap-3 cursor-pointer", children: [_jsx("input", { type: "checkbox", checked: autoDrawEnabled, onChange: toggleAutoDraw, className: "w-4 h-4" }), _jsx("span", { children: "Auto-Draw" })] }), _jsxs("select", { value: autoDrawInterval || 5, onChange: (e) => setAutoDrawInterval(Number(e.target.value)), className: "bg-white/10 border border-white/20 rounded px-3 py-1 text-sm", children: [_jsx("option", { value: 3, children: "3s" }), _jsx("option", { value: 5, children: "5s" }), _jsx("option", { value: 10, children: "10s" }), _jsx("option", { value: 15, children: "15s" }), _jsx("option", { value: 30, children: "30s" })] })] }) })] }), _jsxs("div", { className: "bg-card border border-white/20 rounded-xl p-6", children: [_jsx("h2", { className: "text-xl font-semibold mb-4", children: "Game Controls" }), _jsxs("div", { className: "grid grid-cols-2 gap-4", children: [_jsx("button", { onClick: handleStartGame, disabled: !connected || gameState.status !== "lobby", className: "bg-green-500 text-white font-semibold py-3 rounded-lg hover:bg-green-400 disabled:opacity-50 disabled:cursor-not-allowed", children: "Start Game" }), _jsx("button", { onClick: handleEndGame, disabled: !connected || gameState.status === "lobby" || gameState.status === "finished", className: "bg-red-500 text-white font-semibold py-3 rounded-lg hover:bg-red-400 disabled:opacity-50 disabled:cursor-not-allowed", children: "End Game" })] })] })] }), _jsxs("div", { className: "bg-card border border-white/20 rounded-xl p-6", children: [_jsx("h2", { className: "text-xl font-semibold mb-4", children: "Recent Claims" }), _jsxs("div", { className: "space-y-3 max-h-96 overflow-y-auto", children: [_jsx(AnimatePresence, { children: claims.map((claim) => (_jsxs(motion.div, { initial: { opacity: 0, y: -20 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: 20 }, className: `p-3 rounded-lg border ${claim.win
-                                                ? 'bg-green-500/20 border-green-500/50'
-                                                : 'bg-red-500/20 border-red-500/50'}`, children: [_jsxs("div", { className: "flex items-center justify-between mb-2", children: [_jsx("span", { className: "font-semibold", children: claim.nickname }), _jsx("span", { className: "text-xs text-white/70", children: claim.timestamp })] }), _jsxs("div", { className: "text-sm text-white/80", children: ["Pattern: ", claim.pattern] }), _jsxs("div", { className: "text-xs text-white/60", children: ["Card #", claim.cardId, " \u2022 ", claim.win ? 'WINNER' : 'Invalid'] })] }, claim.id))) }), claims.length === 0 && (_jsx("div", { className: "text-center text-white/50 py-8", children: "No claims yet" }))] })] })] }), _jsxs("div", { className: "mt-6 bg-card border border-white/20 rounded-xl p-6", children: [_jsx("h2", { className: "text-xl font-semibold mb-4", children: "Drawn Numbers" }), _jsx("div", { className: "flex flex-wrap gap-2", children: gameState.drawnNumbers.map((number, index) => (_jsx(motion.span, { initial: { scale: 0 }, animate: { scale: 1 }, className: `w-10 h-10 flex items-center justify-center rounded-full text-sm font-semibold ${number === gameState.currentNumber
-                                ? 'bg-accent text-black'
-                                : 'bg-white/10 text-white/70'}`, children: number }, `${number}-${index}`))) })] }), _jsx(AnimatePresence, { children: showReconnect && (_jsx(motion.div, { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, className: "fixed inset-0 bg-black/80 flex items-center justify-center z-50", children: _jsxs("div", { className: "bg-card border border-white/20 rounded-xl p-8 text-center", children: [_jsx("div", { className: "w-8 h-8 border-2 border-accent/30 border-t-accent rounded-full animate-spin mx-auto mb-4" }), _jsx("h3", { className: "text-xl font-semibold mb-2", children: "Reconnecting..." }), _jsx("p", { className: "text-white/70 mb-4", children: "Lost connection to server" }), _jsx("button", { onClick: () => window.location.reload(), className: "bg-accent text-black px-6 py-2 rounded-lg font-semibold hover:bg-accent/90", children: "Reload Page" })] }) })) }), _jsxs("div", { className: "fixed bottom-4 right-4 bg-card border border-white/20 rounded-lg p-3 text-xs", children: [_jsx("div", { className: "text-white/70 mb-2", children: "Shortcuts:" }), _jsxs("div", { className: "space-y-1 text-white/50", children: [_jsxs("div", { children: [_jsx("kbd", { children: "Space" }), " Draw Next"] }), _jsxs("div", { children: [_jsx("kbd", { children: "P" }), " Pause/Resume"] }), _jsxs("div", { children: [_jsx("kbd", { children: "A" }), " Toggle Auto-Draw"] })] })] })] }));
-}
-// Keyboard shortcuts
-if (typeof window !== "undefined") {
-    window.addEventListener("keydown", (e) => {
-        if (e.target instanceof HTMLInputElement)
-            return;
-        switch (e.code) {
-            case "Space":
-                e.preventDefault();
-                // Trigger draw next
-                break;
-            case "KeyP":
-                e.preventDefault();
-                // Trigger pause/resume
-                break;
-            case "KeyA":
-                e.preventDefault();
-                // Toggle auto-draw
-                break;
+    async function drawNext() {
+        setBusy(true);
+        try {
+            const r = await apiPost(`/games/${gameId}/draw`, token);
+            pushLog(`API draw -> ${r?.number ?? "?"}`);
         }
-    });
+        catch (e) {
+            pushLog(`Draw failed: ${e.message}`);
+        }
+        finally {
+            setBusy(false);
+        }
+    }
+    async function toggleAuto(next) {
+        setBusy(true);
+        try {
+            await apiPost(`/games/${gameId}/auto-draw`, token, { enabled: next, intervalMs });
+            setAuto(next);
+            pushLog(`Auto-draw ${next ? "ENABLED" : "DISABLED"} @ ${intervalMs}ms`);
+        }
+        catch (e) {
+            pushLog(`Auto toggle failed: ${e.message}`);
+        }
+        finally {
+            setBusy(false);
+        }
+    }
+    async function pause() {
+        setBusy(true);
+        try {
+            await apiPost(`/games/${gameId}/pause`, token);
+            pushLog(`Paused`);
+        }
+        catch (e) {
+            pushLog(`Pause failed: ${e.message}`);
+        }
+        finally {
+            setBusy(false);
+        }
+    }
+    return (_jsxs("div", { className: "min-h-full p-6", children: [_jsx(Bar, { show: !connected, text: "Reconnecting\u2026" }), _jsxs("header", { className: "flex items-center justify-between", children: [_jsx("div", { className: "text-lg font-semibold", children: "GameMaster Console" }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsxs(Pill, { children: ["Game #", gameId] }), _jsx(Pill, { children: connected ? "Connected" : "Offline" })] })] }), _jsxs("div", { className: "mt-6 grid lg:grid-cols-3 gap-6", children: [_jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70", children: "Controls" }), _jsxs("div", { className: "mt-3 flex flex-wrap gap-2", children: [_jsx("button", { onClick: drawNext, disabled: busy || !connected, className: "px-4 py-2 rounded-xl bg-accent/20 hover:bg-accent/30 border border-accent/40", children: "Draw Next" }), _jsx("button", { onClick: () => toggleAuto(!auto), disabled: busy || !connected, className: "px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20", children: auto ? "Disable Auto-Draw" : "Enable Auto-Draw" }), _jsx("button", { onClick: pause, disabled: busy || !connected, className: "px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20", children: "Pause" })] }), _jsxs("div", { className: "mt-4", children: [_jsx("label", { className: "text-sm opacity-70", children: "Auto interval (ms)" }), _jsx("input", { type: "range", min: 2000, max: 10000, step: 250, value: intervalMs, onChange: (e) => setIntervalMs(+e.target.value), className: "w-full" }), _jsxs("div", { className: "text-sm opacity-70 mt-1", children: [intervalMs, " ms"] })] })] }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Recent Draws" }), _jsx("div", { className: "grid grid-cols-6 gap-2", children: numbers.slice(-24).reverse().map((n, i) => (_jsx("div", { className: "h-12 rounded-xl grid place-items-center bg-card border border-white/10", children: _jsx("div", { className: "font-semibold", children: label(n) }) }, i))) })] }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Claims (latest)" }), _jsxs("ul", { className: "space-y-2", children: [claims.map((c, i) => (_jsxs("li", { className: "p-3 rounded-xl bg-card border border-white/10", children: [_jsxs("div", { className: "text-sm", children: [c.nickname ?? "Player", " \u2022 ", c.pattern ?? "-"] }), _jsx("div", { className: `text-xs ${c.win ? "text-emerald-300" : "text-red-300"}`, children: c.win ? "APPROVED" : "DENIED" })] }, i))), !claims.length && _jsx("div", { className: "text-sm opacity-50", children: "No claims yet" })] })] })] }), _jsxs("section", { className: "mt-6 rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Recent Activity" }), _jsx("pre", { className: "text-xs whitespace-pre-wrap opacity-80", children: log.join("\n") })] }), _jsxs("footer", { className: "mt-6 text-xs opacity-60", children: ["Open with: ", _jsx("kbd", { children: "?g=42&token=<JWT>" })] })] }));
+}
+function label(n) {
+    if (n <= 15)
+        return `B${n}`;
+    if (n <= 30)
+        return `I${n}`;
+    if (n <= 45)
+        return `N${n}`;
+    if (n <= 60)
+        return `G${n}`;
+    return `O${n}`;
 }
