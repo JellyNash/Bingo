@@ -56,7 +56,14 @@ function flattenGrid(grid: number[][]): number[] {
   return flat;
 }
 
-function buildCardLayout(cardId: string, grid: number[][], signature: string): CardLayout {
+type LocalCardLayout = {
+  id: string;
+  grid: number[];
+  freeCenter: boolean;
+  signature: string;
+};
+
+function buildCardLayout(cardId: string, grid: number[][], signature: string): LocalCardLayout {
   return {
     id: cardId,
     grid: flattenGrid(grid),
@@ -228,7 +235,7 @@ export class OrchestratorAdapter {
       if (!card) throw new Error('Card not found');
 
       const draws = await tx.draw.findMany({ where: { gameId }, orderBy: { sequence: 'asc' } });
-      const drawnNumbers = new Set<number>(draws.map((d) => d.number));
+      const drawnNumbers = new Set<number>(draws.map((d: { number: number }) => d.number));
       drawnNumbers.add(0);
 
       const layout = buildCardLayout(card.id, card.numbers as number[][], card.cardSignature);
@@ -277,7 +284,7 @@ export class OrchestratorAdapter {
         cooldownMs = penalty.cooldownMs;
         denialReason = 'Pattern not satisfied';
 
-        const cooldownUntil = new Date(Date.now() + cooldownMs);
+        const cooldownUntil = cooldownMs ? new Date(Date.now() + cooldownMs) : null;
         await tx.player.update({
           where: { id: playerId },
           data: {

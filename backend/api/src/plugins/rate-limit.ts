@@ -1,7 +1,7 @@
 import fp from 'fastify-plugin';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { config } from '../config.js';
-import { consumeRateLimit } from '../services/redis';
+import { consumeRateLimit } from '../services/redis.js';
 
 export interface RateLimitDecorations {
   rateLimit: {
@@ -17,7 +17,7 @@ declare module 'fastify' {
 
 const MINUTE = 60_000;
 
-const rateLimitPlugin = fp(async (fastify) => {
+const rateLimitPlugin = fp(async (fastify: any) => {
   async function enforce(
     type: 'join' | 'claim' | 'mark',
     request: FastifyRequest,

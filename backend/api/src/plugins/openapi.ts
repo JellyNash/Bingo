@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import YAML from "yaml";
 
-export default fp(async (app) => {
+export default fp(async (app: any) => {
   const specPath =
     process.env.OPENAPI_SPEC_PATH ??
     resolve(process.cwd(), "../../contracts/openapi/bingo.yaml");

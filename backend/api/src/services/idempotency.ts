@@ -1,4 +1,4 @@
-import { redis } from './redis';
+import { redis } from './redis.js';
 import { config } from '../config.js';
 
 export interface IdempotencyRecord<T = unknown> {
@@ -13,7 +13,10 @@ export async function getIdempotentResponse<T = unknown>(key: string): Promise<I
 }
 
 export async function saveIdempotentResponse<T = unknown>(key: string, record: IdempotencyRecord<T>): Promise<void> {
-  await redis.set(`idem:${key}`, JSON.stringify(record), {
-    EX: config.idempotencyTtlSec,
-  });
+  await redis.set(
+    `idem:${key}`,
+    JSON.stringify(record),
+    'EX',
+    config.idempotencyTtlSec
+  );
 }

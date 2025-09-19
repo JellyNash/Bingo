@@ -26,7 +26,7 @@ declare module '@fastify/jwt' {
   }
 }
 
-const authPlugin = fp(async (fastify) => {
+const authPlugin = fp(async (fastify: any) => {
   fastify.register(fastifyJwt, {
     secret: config.jwtSecret,
     sign: {

@@ -1,5 +1,5 @@
 import type { BingoCard } from '@prisma/client';
-import type { BingoPattern } from '../types/api';
+import type { BingoPattern } from '../types/api.js';
 
 export const PATTERNS: Record<BingoPattern, [number, number][]> = {
   ROW_1: Array.from({ length: 5 }, (_, c) => [0, c]),

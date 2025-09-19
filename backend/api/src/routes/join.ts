@@ -6,6 +6,7 @@ import { orchestrator } from '../services/orchestrator.adapter.js';
 import { getIdempotentResponse, saveIdempotentResponse } from '../services/idempotency.js';
 import { mapCard, mapPlayer, buildSnapshot } from '../utils/mappers.js';
 import { publishGameState } from '../services/events.pubsub.js';
+import { genOpaqueToken, sha256Hex } from '../utils/tokens.js';
 
 const tracer = trace.getTracer('api');
 const bodySchema = z.object({
@@ -77,32 +78,30 @@ export default async function joinRoute(fastify: FastifyInstance) {
       nickname: player.nickname,
     });
 
+    // Generate secure tokens
+    const resumeToken = genOpaqueToken(32);
+    const sessionToken = fastify.jwt.sign(
+      { sub: player.id, gameId: game.id, role: 'player' },
+      { expiresIn: '12h' }
+    );
+
+    const resumeTokenHash = sha256Hex(resumeToken);
+    const sessionTokenHash = sha256Hex(sessionToken);
+
+    // Create session with hashes
     const session = await prisma.session.create({
       data: {
         gameId: game.id,
         playerId: player.id,
         ipAddress: request.ip,
         namespace: `game:${game.id}`,
-        resumeToken: '',
-        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 12),
+        resumeTokenHash,
+        sessionTokenHash,
+        // Optionally keep raw copies (non-unique)
+        resumeToken,
+        sessionToken,
+        expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
       },
-    });
-
-    const sessionToken = fastify.jwt.sign({
-      sub: player.id,
-      gameId: game.id,
-      role: 'player',
-      sessionId: session.id,
-    });
-
-    const resumeToken = fastify.jwt.sign(
-      { sub: player.id, gameId: game.id, role: 'player', sessionId: session.id },
-      { expiresIn: '7d' },
-    );
-
-    await prisma.session.update({
-      where: { id: session.id },
-      data: { resumeToken },
     });
 
     const snapshot = await prisma.game.findUnique({

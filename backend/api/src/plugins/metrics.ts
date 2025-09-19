@@ -1,12 +1,13 @@
 import fp from 'fastify-plugin';
-import { Counter, Histogram, Registry } from 'prom-client';
+import prom from 'prom-client';
+const { Counter, Histogram, Registry } = prom;
 
 export interface MetricsPluginDecorations {
   metrics: {
-    registry: Registry;
-    requestCounter: Counter<string>;
-    requestDuration: Histogram<string>;
-    claimValidationDuration: Histogram<string>;
+    registry: InstanceType<typeof Registry>;
+    requestCounter: InstanceType<typeof Counter>;
+    requestDuration: InstanceType<typeof Histogram>;
+    claimValidationDuration: InstanceType<typeof Histogram>;
   };
 }
 
@@ -14,7 +15,7 @@ declare module 'fastify' {
   interface FastifyInstance extends MetricsPluginDecorations {}
 }
 
-const metricsPlugin = fp(async (fastify) => {
+const metricsPlugin = fp(async (fastify: any) => {
   const registry = new Registry();
 
   const requestCounter = new Counter({
@@ -46,12 +47,12 @@ const metricsPlugin = fp(async (fastify) => {
     claimValidationDuration,
   });
 
-  fastify.get('/metrics', async (_req, reply) => {
+  fastify.get('/metrics', async (_req: any, reply: any) => {
     reply.header('Content-Type', registry.contentType);
     return reply.send(await registry.metrics());
   });
 
-  fastify.addHook('onResponse', async (request, reply) => {
+  fastify.addHook('onResponse', async (request: any, reply: any) => {
     if (!request.routerPath) return;
     const route = request.routerPath;
     requestCounter.inc({
@@ -63,7 +64,7 @@ const metricsPlugin = fp(async (fastify) => {
     requestDuration.observe({ route, method: request.method }, elapsed);
   });
 
-  fastify.addHook('onRequest', async (request) => {
+  fastify.addHook('onRequest', async (request: any) => {
     (request as any)._startTime = process.hrtime.bigint();
   });
 });

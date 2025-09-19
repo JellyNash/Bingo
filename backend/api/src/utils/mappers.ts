@@ -1,5 +1,5 @@
 import type { Game, Player, BingoCard, Draw, Claim, Penalty } from '@prisma/client';
-import type { ApiGame, ApiPlayer, ApiBingoCard, ApiDraw, ApiClaim, ApiPenalty, GameSnapshot } from '../types/api';
+import type { ApiGame, ApiPlayer, ApiBingoCard, ApiDraw, ApiClaim, ApiPenalty, GameSnapshot } from '../types/api.js';
 
 export function mapGame(game: Game): ApiGame {
   return {

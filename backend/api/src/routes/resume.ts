@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma } from "../services/prisma.js";
+import { genOpaqueToken, sha256Hex } from "../utils/tokens.js";
 
 const bodySchema = z.object({
   resumeToken: z.string(),
@@ -23,7 +24,9 @@ export default async function resumeRoute(fastify: FastifyInstance) {
       return reply.code(400).send({ error: "token_mismatch", message: "Resume token missing identifiers" });
     }
 
-    const session = await prisma.session.findFirst({ where: { gameId, playerId, resumeToken } });
+    // Hash the token to find the session
+    const resumeTokenHash = sha256Hex(resumeToken);
+    const session = await prisma.session.findFirst({ where: { gameId, playerId, resumeTokenHash } });
     if (!session) return reply.code(404).send({ error: "session_not_found", message: "Session not found" });
 
     const [player, game] = await Promise.all([
@@ -45,12 +48,22 @@ export default async function resumeRoute(fastify: FastifyInstance) {
       .filter(c => c.status === "ACCEPTED" && (c as any).isWinner)
       .map(c => ({ playerId: c.playerId, rank: (c as any).winPosition ?? 0, pattern: c.pattern }));
 
+    // Generate new tokens
     const sessionToken = fastify.jwt.sign({ sub: playerId, gameId, role: "player", sessionId: session.id }, { expiresIn: "12h" });
-    const newResumeToken = fastify.jwt.sign({ sub: playerId, gameId, role: "player", sessionId: session.id }, { expiresIn: "7d" });
+    const newResumeToken = genOpaqueToken(32);
+
+    const sessionTokenHash = sha256Hex(sessionToken);
+    const newResumeTokenHash = sha256Hex(newResumeToken);
 
     await prisma.session.update({
       where: { id: session.id },
-      data: { lastSeenAt: new Date(), resumeToken: newResumeToken },
+      data: {
+        lastSeenAt: new Date(),
+        resumeToken: newResumeToken,
+        resumeTokenHash: newResumeTokenHash,
+        sessionToken,
+        sessionTokenHash
+      },
     });
 
     return reply.send({
