@@ -52,7 +52,7 @@ EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s \
-  CMD wget -qO- http://localhost:3000/health || exit 1
+  CMD wget -qO- http://localhost:3000/healthz || exit 1
 
 WORKDIR /app/backend/api
 

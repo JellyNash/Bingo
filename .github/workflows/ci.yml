@@ -171,11 +171,26 @@ jobs:
       url: https://staging.bingo.example.com
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Deploy to staging
+        env:
+          DEPLOY_HOST: ${{ secrets.STAGING_HOST }}
+          DEPLOY_USER: ${{ secrets.STAGING_USER }}
+          DEPLOY_KEY: ${{ secrets.STAGING_SSH_KEY }}
         run: |
-          echo "Deploying to staging environment..."
-          # Add your deployment commands here
-          # Example: ssh deploy@staging "cd /app && docker compose pull && docker compose up -d"
+          echo "$DEPLOY_KEY" > deploy_key
+          chmod 600 deploy_key
+          ssh -o StrictHostKeyChecking=no -i deploy_key ${DEPLOY_USER}@${DEPLOY_HOST} << 'ENDSSH'
+            cd /opt/bingo
+            git pull origin develop
+            docker compose --profile cloud pull
+            docker compose --profile cloud,obs up -d --remove-orphans
+            docker compose exec -T api npx prisma migrate deploy || true
+            docker system prune -f
+          ENDSSH
+          rm deploy_key
 
   deploy-production:
     name: Deploy to Production
@@ -187,8 +202,38 @@ jobs:
       url: https://bingo.example.com
 
     steps:
-      - name: Deploy to production
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create backup before deployment
+        env:
+          DEPLOY_HOST: ${{ secrets.PROD_HOST }}
+          DEPLOY_USER: ${{ secrets.PROD_USER }}
+          DEPLOY_KEY: ${{ secrets.PROD_SSH_KEY }}
         run: |
-          echo "Deploying to production environment..."
-          # Add your deployment commands here
-          # Example: ssh deploy@production "cd /app && docker compose pull && docker compose up -d"
+          echo "$DEPLOY_KEY" > deploy_key
+          chmod 600 deploy_key
+          ssh -o StrictHostKeyChecking=no -i deploy_key ${DEPLOY_USER}@${DEPLOY_HOST} \
+            "cd /opt/bingo && ./scripts/pg-backup.sh"
+          rm deploy_key
+
+      - name: Deploy to production
+        env:
+          DEPLOY_HOST: ${{ secrets.PROD_HOST }}
+          DEPLOY_USER: ${{ secrets.PROD_USER }}
+          DEPLOY_KEY: ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          echo "$DEPLOY_KEY" > deploy_key
+          chmod 600 deploy_key
+          ssh -o StrictHostKeyChecking=no -i deploy_key ${DEPLOY_USER}@${DEPLOY_HOST} << 'ENDSSH'
+            cd /opt/bingo
+            git pull origin main || git pull origin master
+            docker compose --profile cloud pull
+            docker compose --profile cloud,obs up -d --remove-orphans
+            docker compose exec -T api npx prisma migrate deploy || true
+            docker system prune -f
+            # Health check
+            sleep 10
+            curl -f http://localhost/health || exit 1
+          ENDSSH
+          rm deploy_key

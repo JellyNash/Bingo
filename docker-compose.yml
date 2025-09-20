@@ -69,6 +69,14 @@ services:
     networks: [bingo]
     restart: unless-stopped
     profiles: ["offline", "cloud", "obs"]
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
     security_opt:
       - no-new-privileges:true
     ulimits:
@@ -90,6 +98,14 @@ services:
     networks: [bingo]
     restart: unless-stopped
     profiles: ["offline", "cloud", "obs"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
     security_opt:
       - no-new-privileges:true
     ulimits:
@@ -118,9 +134,17 @@ services:
     networks: [bingo]
     restart: unless-stopped
     profiles: ["offline", "cloud"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 32M
     volumes:
-      - /data/caddy/data:/data
-      - /data/caddy/config:/config
+      - caddy_data:/data
+      - caddy_config:/config
 
   # --- Observability Stack ---
   prometheus:
@@ -194,3 +218,9 @@ services:
 
 volumes:
   prometheus_data:
+  pg_data:
+  redis_data:
+  grafana_data:
+  loki_data:
+  caddy_data:
+  caddy_config:
