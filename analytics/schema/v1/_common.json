@@ -1,0 +1,37 @@
+{
+  "$id": "common",
+  "type": "object",
+  "required": ["id", "ts", "app", "name"],
+  "properties": {
+    "id": { "type": "string", "format": "uuid", "description": "Unique event identifier" },
+    "ts": { "type": "number", "minimum": 0, "description": "Timestamp in milliseconds since epoch" },
+    "app": { 
+      "type": "string",
+      "enum": ["player", "console", "screen", "api", "realtime"],
+      "description": "Source application"
+    },
+    "name": { "type": "string", "description": "Event name from manifest" },
+    "gameId": { "type": "string", "maxLength": 32, "description": "Game identifier" },
+    "playerId": { "type": "string", "maxLength": 32, "description": "Player identifier" },
+    "cardId": { "type": "string", "maxLength": 32, "description": "Bingo card identifier" },
+    "sessionId": { "type": "string", "maxLength": 64, "description": "Session identifier" },
+    "env": { 
+      "type": "string",
+      "enum": ["offline", "cloud"],
+      "description": "Environment mode"
+    },
+    "traceId": { "type": "string", "maxLength": 64, "description": "Distributed trace identifier" },
+    "dnt": { "type": "boolean", "description": "Do-not-track flag" },
+    "ctx": { 
+      "type": "object", 
+      "additionalProperties": true,
+      "description": "Stable context (UA, client info, versions)"
+    },
+    "props": { 
+      "type": "object", 
+      "additionalProperties": true,
+      "description": "Event-specific properties"
+    }
+  },
+  "additionalProperties": false
+}

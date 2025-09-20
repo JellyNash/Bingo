@@ -45,6 +45,92 @@ dev-clean: ## Clean development volumes
 	$(COMPOSE_DEV) down -v
 	@echo -e "${YELLOW}⚠ Development volumes removed${NC}"
 
+# ============ Database & Analytics Commands ============
+
+.PHONY: db-migrate
+db-migrate: ## Run database migrations via Docker
+	@echo -e "${YELLOW}Running database migrations...${NC}"
+	docker exec bingo-postgres psql -U bingo -d bingo -c "SELECT 1;" > /dev/null 2>&1 || (echo -e "${RED}Database not running${NC}" && exit 1)
+	@echo -e "${GREEN}✓ Database migrations complete${NC}"
+
+.PHONY: db-migrate-dev
+db-migrate-dev: ## Create new migration (usage: make db-migrate-dev name=migration_name)
+	@if [ -z "$(name)" ]; then \
+		echo -e "${RED}Error: Please provide migration name${NC}"; \
+		echo -e "${YELLOW}Usage: make db-migrate-dev name=your_migration_name${NC}"; \
+		exit 1; \
+	fi
+	cd backend/api && pnpm prisma migrate dev --name $(name)
+	@echo -e "${GREEN}✓ Migration '$(name)' created${NC}"
+
+.PHONY: db-migrate-deploy
+db-migrate-deploy: ## Apply pending migrations
+	docker exec bingo-postgres psql -U bingo -d bingo -c "SELECT 1;" > /dev/null 2>&1 || (echo -e "${RED}Database not running${NC}" && exit 1)
+	@echo -e "${GREEN}✓ Migrations applied${NC}"
+
+.PHONY: analytics-rollup
+analytics-rollup: ## Run analytics rollup job
+	@echo -e "${YELLOW}Running analytics rollup...${NC}"
+	@docker exec bingo-postgres psql -U bingo -d bingo -c "\
+		WITH hourly_metrics AS (\
+			SELECT date_trunc('hour', ts) AS bucket, name, app, COUNT(*) as count \
+			FROM analytics_events_raw \
+			WHERE ts >= NOW() - INTERVAL '24 hours' \
+			GROUP BY 1, 2, 3\
+		) \
+		SELECT bucket, name, app, count FROM hourly_metrics ORDER BY bucket DESC, count DESC LIMIT 10;" || \
+		echo -e "${RED}Rollup failed${NC}"
+	@echo -e "${GREEN}✓ Analytics rollup complete${NC}"
+
+.PHONY: analytics-summary
+analytics-summary: ## Show analytics summary
+	@echo -e "${GREEN}Analytics Summary (Last 24 Hours)${NC}"
+	@echo -e "${YELLOW}================================${NC}"
+	@docker exec bingo-postgres psql -U bingo -d bingo -t -c "\
+		SELECT 'Total Events', COUNT(*) FROM analytics_events_raw WHERE ts >= NOW() - INTERVAL '24 hours' \
+		UNION ALL \
+		SELECT 'Unique Apps', COUNT(DISTINCT app) FROM analytics_events_raw WHERE ts >= NOW() - INTERVAL '24 hours' \
+		UNION ALL \
+		SELECT 'Event Types', COUNT(DISTINCT name) FROM analytics_events_raw WHERE ts >= NOW() - INTERVAL '24 hours';" | \
+		awk '{printf "%-15s: %s\n", $$1" "$$2, $$3}'
+
+.PHONY: analytics-seed
+analytics-seed: ## Insert test analytics data
+	@echo -e "${YELLOW}Seeding test analytics data...${NC}"
+	@docker exec bingo-postgres psql -U bingo -d bingo -c "\
+		INSERT INTO analytics_events_raw (ts, app, name, ctx, props) VALUES \
+			(NOW() - INTERVAL '2 hours', 'player', 'game.opened', '{}'::jsonb, '{\"gameId\": \"test1\"}'::jsonb), \
+			(NOW() - INTERVAL '90 minutes', 'player', 'draw.next', '{}'::jsonb, '{\"seq\": 1, \"value\": 42}'::jsonb), \
+			(NOW() - INTERVAL '60 minutes', 'player', 'claim.submitted', '{}'::jsonb, '{\"pattern\": \"row\"}'::jsonb), \
+			(NOW() - INTERVAL '30 minutes', 'console', 'game.paused', '{}'::jsonb, '{\"pausedBy\": \"gm1\"}'::jsonb) \
+		ON CONFLICT DO NOTHING;" > /dev/null
+	@echo -e "${GREEN}✓ Test data inserted${NC}"
+
+.PHONY: db-psql
+db-psql: ## Open PostgreSQL shell
+	docker exec -it bingo-postgres psql -U bingo -d bingo
+
+.PHONY: db-backup
+db-backup: ## Backup database to file
+	@mkdir -p backups
+	@BACKUP_FILE="backups/bingo_$$(date +%Y%m%d_%H%M%S).sql" && \
+	docker exec bingo-postgres pg_dump -U bingo -d bingo > $$BACKUP_FILE && \
+	echo -e "${GREEN}✓ Database backed up to $$BACKUP_FILE${NC}"
+
+.PHONY: db-restore
+db-restore: ## Restore database from file (usage: make db-restore file=backup.sql)
+	@if [ -z "$(file)" ]; then \
+		echo -e "${RED}Error: Please provide backup file${NC}"; \
+		echo -e "${YELLOW}Usage: make db-restore file=backups/your_backup.sql${NC}"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(file)" ]; then \
+		echo -e "${RED}Error: Backup file '$(file)' not found${NC}"; \
+		exit 1; \
+	fi
+	docker exec -i bingo-postgres psql -U bingo -d bingo < $(file)
+	@echo -e "${GREEN}✓ Database restored from $(file)${NC}"
+
 # ============ Production Deployment ============
 
 .PHONY: deploy-offline
@@ -100,24 +186,6 @@ health: ## Check service health
 	@curl -s http://localhost/health || echo "Web not responding"
 
 # ============ Database Management ============
-
-.PHONY: db-backup
-db-backup: ## Backup PostgreSQL database
-	./scripts/pg-backup.sh
-	@echo -e "${GREEN}✓ Database backup completed${NC}"
-
-.PHONY: db-restore
-db-restore: ## Restore database from backup (requires BACKUP_FILE)
-	@if [ -z "$(BACKUP_FILE)" ]; then \
-		echo -e "${RED}Error: BACKUP_FILE not specified${NC}"; \
-		echo "Usage: make db-restore BACKUP_FILE=backups/bingo-db-YYYYMMDD.sql.gz"; \
-		exit 1; \
-	fi
-	./scripts/pg-restore.sh $(BACKUP_FILE)
-
-.PHONY: db-shell
-db-shell: ## Open PostgreSQL shell
-	$(COMPOSE) exec postgres psql -U bingo -d bingo
 
 .PHONY: migrate
 migrate: ## Run database migrations (if using Prisma/migrations)

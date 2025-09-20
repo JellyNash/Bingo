@@ -1,0 +1,40 @@
+{
+  "$id": "card.mark",
+  "description": "Player marks a number on their bingo card",
+  "allOf": [
+    { "$ref": "_common.json" },
+    {
+      "properties": {
+        "name": { "const": "card.mark" },
+        "props": {
+          "type": "object",
+          "required": ["position", "number", "allowed"],
+          "properties": {
+            "position": { 
+              "type": "integer", 
+              "minimum": 0,
+              "maximum": 24,
+              "description": "Position on the 5x5 bingo card (0-24)"
+            },
+            "number": { 
+              "type": "integer", 
+              "minimum": 1,
+              "maximum": 75,
+              "description": "Number being marked"
+            },
+            "allowed": { 
+              "type": "boolean",
+              "description": "Whether the mark is valid"
+            },
+            "pattern": {
+              "type": "string",
+              "enum": ["row", "column", "diagonal", "corners", "full-card"],
+              "description": "Pattern completed by this mark, if any"
+            }
+          },
+          "additionalProperties": true
+        }
+      }
+    }
+  ]
+}

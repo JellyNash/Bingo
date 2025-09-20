@@ -17,6 +17,9 @@ volumes:
   redis_data:
   grafana_data:
   loki_data:
+  prometheus_data:
+  caddy_data:
+  caddy_config:
 
 services:
   # Database
@@ -216,11 +219,4 @@ services:
     profiles: ["mdns"]
     restart: unless-stopped
 
-volumes:
-  prometheus_data:
-  pg_data:
-  redis_data:
-  grafana_data:
-  loki_data:
-  caddy_data:
-  caddy_config:
+# Volumes section moved to line 15

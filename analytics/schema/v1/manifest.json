@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "events": [
+    "game.created",
+    "game.opened",
+    "game.paused",
+    "game.autodraw.toggled",
+    "draw.next",
+    "card.mark",
+    "card.mark.server",
+    "claim.submitted",
+    "claim.result",
+    "penalty.applied",
+    "socket.connect",
+    "socket.disconnect",
+    "socket.reconnect",
+    "resume.success",
+    "resume.fail",
+    "pwa.install",
+    "pwa.offline.hydrate",
+    "api.request",
+    "realtime.emit"
+  ]
+}

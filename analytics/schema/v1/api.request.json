@@ -1,0 +1,53 @@
+{
+  "$id": "api.request",
+  "description": "API request completed",
+  "allOf": [
+    { "$ref": "_common.json" },
+    {
+      "properties": {
+        "name": { "const": "api.request" },
+        "props": {
+          "type": "object",
+          "required": ["route", "status", "durMs"],
+          "properties": {
+            "route": {
+              "type": "string",
+              "description": "API route path"
+            },
+            "method": {
+              "type": "string",
+              "enum": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+              "description": "HTTP method"
+            },
+            "status": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599,
+              "description": "HTTP status code"
+            },
+            "durMs": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Request duration in milliseconds"
+            },
+            "error": {
+              "type": "string",
+              "description": "Error message if request failed"
+            },
+            "bytesIn": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Request body size in bytes"
+            },
+            "bytesOut": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Response body size in bytes"
+            }
+          },
+          "additionalProperties": true
+        }
+      }
+    }
+  ]
+}

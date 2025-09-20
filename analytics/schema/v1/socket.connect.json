@@ -1,0 +1,32 @@
+{
+  "$id": "socket.connect",
+  "description": "WebSocket connection established",
+  "allOf": [
+    { "$ref": "_common.json" },
+    {
+      "properties": {
+        "name": { "const": "socket.connect" },
+        "props": {
+          "type": "object",
+          "properties": {
+            "transport": {
+              "type": "string",
+              "enum": ["websocket", "polling"],
+              "description": "Transport mechanism used"
+            },
+            "reconnection": {
+              "type": "boolean",
+              "description": "Whether this is a reconnection"
+            },
+            "connectionTime": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Time taken to establish connection (ms)"
+            }
+          },
+          "additionalProperties": true
+        }
+      }
+    }
+  ]
+}

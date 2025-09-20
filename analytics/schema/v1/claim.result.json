@@ -1,0 +1,45 @@
+{
+  "$id": "claim.result",
+  "description": "Result of a bingo claim validation",
+  "allOf": [
+    { "$ref": "_common.json" },
+    {
+      "properties": {
+        "name": { "const": "claim.result" },
+        "props": {
+          "type": "object",
+          "required": ["valid"],
+          "properties": {
+            "valid": { 
+              "type": "boolean",
+              "description": "Whether the claim was valid"
+            },
+            "rank": { 
+              "type": "integer", 
+              "minimum": 1,
+              "description": "Winning position if valid (1st, 2nd, etc.)"
+            },
+            "reason": { 
+              "type": "string",
+              "description": "Reason for rejection if invalid"
+            },
+            "pattern": {
+              "type": "string",
+              "description": "Pattern that was claimed"
+            },
+            "prize": {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string" },
+                "amount": { "type": "number" },
+                "currency": { "type": "string" }
+              },
+              "description": "Prize details if applicable"
+            }
+          },
+          "additionalProperties": true
+        }
+      }
+    }
+  ]
+}

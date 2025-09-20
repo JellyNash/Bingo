@@ -414,3 +414,58 @@ model IdempotencyKey {
   @@index([expiresAt])
   @@map("idempotency_keys")
 }
+
+// ================================
+// ANALYTICS & TELEMETRY
+// ================================
+
+model AnalyticsEventRaw {
+  id         String   @id @default(uuid())
+  ts         DateTime @db.Timestamptz
+  app        String   @db.VarChar(20)
+  name       String   @db.VarChar(50)
+
+  // Game context
+  gameId     String?  @db.VarChar(32)
+  playerId   String?  @db.VarChar(32)
+  cardId     String?  @db.VarChar(32)
+  sessionId  String?  @db.VarChar(64)
+
+  // Environment
+  env        String?  @db.VarChar(16)
+  traceId    String?  @db.VarChar(64)
+  dnt        Boolean? @default(false)
+
+  // Event data
+  ctx        Json     // Stable context (UA, client info, versions)
+  props      Json     // Event-specific properties
+
+  // Validation
+  sigValid   Boolean? // null = unsigned, true/false = HMAC validation result
+
+  // Timestamps
+  createdAt  DateTime @default(now())
+
+  @@index([ts])
+  @@index([name])
+  @@index([gameId])
+  @@index([playerId])
+  @@index([createdAt])
+  @@map("analytics_events_raw")
+}
+
+model AnalyticsRollupHourly {
+  id      String   @id @default(uuid())
+  bucket  DateTime @db.Timestamptz
+  metric  String   @db.VarChar(50)
+  value   BigInt
+  dim     Json     // Dimensions (e.g., { "app": "player", "env": "offline" })
+
+  createdAt DateTime @default(now())
+
+  @@unique([bucket, metric, dim])
+  @@index([bucket, metric])
+  @@index([bucket])
+  @@index([metric])
+  @@map("analytics_rollups_hourly")
+}

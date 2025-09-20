@@ -12,6 +12,7 @@ import markRoute from './cards.mark.js';
 import claimRoute from './cards.claim.js';
 import penaltyRoute from './penalties.apply.js';
 import snapshotRoute from './snapshot.get.js';
+import analyticsIngest from './analytics.ingest.js';
 
 const routesPlugin = fp(async (fastify: FastifyInstance) => {
   await fastify.register(gamesCreate);
@@ -26,6 +27,7 @@ const routesPlugin = fp(async (fastify: FastifyInstance) => {
   await fastify.register(claimRoute);
   await fastify.register(penaltyRoute);
   await fastify.register(snapshotRoute);
+  await fastify.register(analyticsIngest);
 });
 
 export default routesPlugin;
