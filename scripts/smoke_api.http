@@ -1,0 +1,49 @@
+### Create Game
+POST http://localhost:3000/games
+Content-Type: application/json
+Authorization: Bearer {{GAMEMASTER_TOKEN}}
+
+{
+  "name": "Smoke Test",
+  "maxPlayers": 25,
+  "allowLateJoin": true,
+  "autoDrawInterval": 8,
+  "winnerLimit": 1
+}
+
+### Open Game
+POST http://localhost:3000/games/{{gameId}}/open
+Authorization: Bearer {{GAMEMASTER_TOKEN}}
+
+### Join Game
+POST http://localhost:3000/games/{{pin}}/join
+Content-Type: application/json
+
+{
+  "nickname": "SmokePlayer"
+}
+
+### Resume Session
+POST http://localhost:3000/games/{{gameId}}/players/{{playerId}}/resume
+Content-Type: application/json
+
+{
+  "resumeToken": "{{resumeToken}}"
+}
+
+### Manual Draw
+POST http://localhost:3000/games/{{gameId}}/draw
+Authorization: Bearer {{GAMEMASTER_TOKEN}}
+
+### Submit Claim
+POST http://localhost:3000/games/{{gameId}}/players/{{playerId}}/claim
+Authorization: Bearer {{PLAYER_TOKEN}}
+Content-Type: application/json
+
+{
+  "pattern": "ROW_1"
+}
+
+### Snapshot
+GET http://localhost:3000/games/{{gameId}}/snapshot
+Authorization: Bearer {{PLAYER_TOKEN}}

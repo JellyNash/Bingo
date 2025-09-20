@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import { api } from './api';
+import { api, type BingoPattern } from './api';
 import { socketClient } from './socket';
 import type { DrawNextEvent, StateUpdateEvent, ClaimResultEvent, PlayerPenaltyEvent } from './socket';
+import { saveSnapshot, loadSnapshot, type CachedSnapshot } from './cache';
 
 interface AuthState {
   resumeToken?: string;
@@ -55,7 +56,7 @@ interface PlayerStore {
   setAuth: (auth: Partial<AuthState>) => void;
   setCard: (grid: number[][]) => void;
   toggleMark: (position: number) => Promise<void>;
-  submitClaim: (pattern: string) => Promise<void>;
+  submitClaim: (pattern: BingoPattern) => Promise<void>;
   hydrateFromSnapshot: (snapshot: any) => void;
 
   // Socket event handlers
@@ -69,6 +70,10 @@ interface PlayerStore {
   connect: () => void;
   disconnect: () => void;
   reconnect: () => void;
+
+  // Offline caching
+  hydrateFromCache: () => void;
+  saveToCache: () => void;
 
   // Auth flow
   join: (pin: string, nickname: string) => Promise<boolean>;
@@ -145,7 +150,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     }));
 
     try {
-      await api.markCell(cardId, position, newMarked);
+      await api.mark(state.auth.gameId!, cardId, position, newMarked);
     } catch (error) {
       // Revert on error
       set((state) => ({
@@ -162,11 +167,11 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
   },
 
   submitClaim: async (pattern) => {
-    const { cardId } = get().auth;
-    if (!cardId) throw new Error('No card ID');
+    const { gameId, cardId } = get().auth;
+    if (!cardId || !gameId) throw new Error('No card or game ID');
 
     try {
-      await api.submitClaim(cardId, pattern);
+      await api.claim(gameId, cardId, pattern);
     } catch (error) {
       console.error('Claim failed:', error);
       throw error;
@@ -189,6 +194,8 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
         marks: snapshot.card.marks || { 12: true },
       } : state.card,
     }));
+    // Save to cache after hydrating
+    get().saveToCache();
   },
 
   // Socket event handlers
@@ -223,10 +230,10 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       set((state) => ({
         status: {
           ...state.status,
-          strikes: data.penalty.strikes,
-          cooldownMs: data.penalty.cooldownMs,
-          cooldownEndTime: data.penalty.cooldownMs
-            ? Date.now() + data.penalty.cooldownMs
+          strikes: data.penalty!.strikes,
+          cooldownMs: data.penalty!.cooldownMs,
+          cooldownEndTime: data.penalty!.cooldownMs
+            ? Date.now() + data.penalty!.cooldownMs
             : undefined,
         },
       }));
@@ -240,7 +247,7 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
           {
             playerId: data.playerId,
             nickname: data.nickname,
-            rank: data.rank,
+            rank: data.rank!,
             pattern: data.pattern || '',
           },
         ],
@@ -311,7 +318,42 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
     const state = get();
     if (!state.connection.online && !state.connection.reconnecting) {
       set({ connection: { online: false, reconnecting: true, reconnectAttempts: 0 } });
-      socketClient.connect();
+      socketClient.connect(state.auth.sessionToken || '');
+    }
+  },
+
+  // Offline hydration
+  hydrateFromCache: () => {
+    const state = get();
+    if (!navigator.onLine && state.auth.gameId && state.auth.cardId) {
+      const cached = loadSnapshot(state.auth.gameId, state.auth.cardId);
+      if (cached) {
+        set({
+          card: { grid: cached.grid, marks: cached.marks },
+          drawn: {
+            lastSeq: state.drawn.lastSeq,
+            drawnSet: new Set([0, ...cached.drawn]),
+          },
+          winners: cached.winners,
+          connection: { online: false, reconnecting: true, reconnectAttempts: 0 }
+        });
+      }
+    }
+  },
+
+  // Helper to save current state to cache
+  saveToCache: () => {
+    const state = get();
+    if (state.auth.gameId && state.auth.cardId && state.auth.nickname) {
+      saveSnapshot({
+        gameId: state.auth.gameId,
+        cardId: state.auth.cardId,
+        nickname: state.auth.nickname,
+        grid: state.card.grid,
+        marks: state.card.marks,
+        drawn: Array.from(state.drawn.drawnSet).filter(n => n !== 0),
+        winners: state.winners
+      });
     }
   },
 
@@ -340,18 +382,23 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
           sessionToken: response.sessionToken,
           resumeToken: response.resumeToken,
           playerId: response.player?.id,
-          gameId: response.game?.id,
-          cardId: response.card?.id,
+          gameId: response.gameState?.game?.id,
+          cardId: response.bingoCard?.id,
           nickname: response.player?.nickname || nickname,
         },
         card: {
-          grid: response.card?.grid || get().card.grid,
-          marks: response.card?.marks || { 12: true },
+          grid: response.bingoCard?.numbers?.map(row =>
+            row.map(val => val === 'FREE' ? 0 : val)
+          ) || get().card.grid,
+          marks: response.bingoCard?.marks || { 12: true },
         },
       });
 
       // Save to localStorage for resume
-      localStorage.setItem('lastGameId', response.game?.id || '');
+      localStorage.setItem('lastGameId', response.gameState?.game?.id || '');
+
+      // Save to cache
+      get().saveToCache();
 
       // Connect socket
       if (response.sessionToken) {
@@ -374,43 +421,50 @@ export const usePlayerStore = create<PlayerStore>((set, get) => ({
       if (!response) return false;
 
       // Update tokens
-      if (response.sessionToken) {
-        sessionStorage.setItem('sessionToken', response.sessionToken);
+      if (response.newSessionToken) {
+        sessionStorage.setItem('sessionToken', response.newSessionToken);
       }
 
       // Update API auth
       api.setAuth({
-        sessionToken: response.sessionToken,
+        sessionToken: response.newSessionToken,
         resumeToken: resumeToken,
       });
 
       // Update store
       set({
         auth: {
-          sessionToken: response.sessionToken,
+          sessionToken: response.newSessionToken,
           resumeToken: resumeToken,
           playerId: response.player?.id,
-          gameId: response.game?.id,
-          cardId: response.card?.id,
+          gameId: response.gameState?.game?.id,
+          cardId: get().auth.cardId, // Keep existing cardId, not returned in resume
           nickname: response.player?.nickname,
         },
         card: {
-          grid: response.card?.grid || get().card.grid,
-          marks: response.card?.marks || { 12: true },
+          grid: get().card.grid,  // Card not returned in resume
+          marks: { 12: true },
         },
       });
 
       // Hydrate from snapshot data
-      get().hydrateFromSnapshot(response);
+      get().hydrateFromSnapshot(response.gameState);
 
       // Connect socket
-      if (response.sessionToken) {
+      if (response.newSessionToken) {
         get().connect();
       }
 
       return true;
     } catch (error) {
       console.error('Resume failed:', error);
+
+      // Clear invalid tokens
+      get().clearSession();
+
+      // Could add toast notification here in the future
+      // For now, the navigation to home page is sufficient
+
       return false;
     }
   },

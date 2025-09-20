@@ -1,26 +1,42 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, ReactNode } from 'react';
 import { usePlayerStore } from './lib/store';
 import { api } from './lib/api';
-import Join from './pages/Join';
-import Card from './pages/Card';
+import { pruneExpiredSnapshots } from './lib/cache';
+import { useNavigate, useLocation } from 'react-router-dom';
 
-type AppState = 'INIT' | 'JOIN' | 'READY' | 'ERROR';
+interface AppProps {
+  children: ReactNode;
+}
 
-export default function App() {
-  const [appState, setAppState] = useState<AppState>('INIT');
-  const [error, setError] = useState<string>('');
+export default function App({ children }: AppProps) {
+  const [isInitialized, setIsInitialized] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  const { auth, connection, resume, clearSession } = usePlayerStore();
+  const { auth, connection, resume, clearSession, hydrateFromCache } = usePlayerStore();
 
   useEffect(() => {
+    // Prune expired snapshots on app boot
+    pruneExpiredSnapshots();
+
     // Try to resume on mount
     const tryResume = async () => {
+      // First try offline hydration
+      hydrateFromCache();
+
       const resumed = await resume();
       if (resumed) {
-        setAppState('READY');
+        // Navigate to card if we're on home page and successfully resumed
+        if (location.pathname === '/') {
+          navigate('/card');
+        }
       } else {
-        setAppState('JOIN');
+        // Navigate to home if we're on card page but can't resume
+        if (location.pathname === '/card') {
+          navigate('/');
+        }
       }
+      setIsInitialized(true);
     };
 
     tryResume();
@@ -51,16 +67,7 @@ export default function App() {
     });
   }, [auth.sessionToken, auth.resumeToken]);
 
-  const handleJoinSuccess = () => {
-    setAppState('READY');
-  };
-
-  const handleLogout = () => {
-    clearSession();
-    setAppState('JOIN');
-  };
-
-  if (appState === 'INIT') {
+  if (!isInitialized) {
     return (
       <div className="h-full w-full flex items-center justify-center">
         <div className="text-center">
@@ -71,22 +78,5 @@ export default function App() {
     );
   }
 
-  if (appState === 'JOIN') {
-    return <Join onSuccess={handleJoinSuccess} />;
-  }
-
-  if (appState === 'READY') {
-    return <Card onLogout={handleLogout} />;
-  }
-
-  return (
-    <div className="h-full w-full flex items-center justify-center p-4">
-      <div className="text-center">
-        <p className="text-feedback-danger mb-4">Error: {error}</p>
-        <button onClick={() => setAppState('JOIN')} className="btn-primary">
-          Try Again
-        </button>
-      </div>
-    </div>
-  );
+  return children;
 }

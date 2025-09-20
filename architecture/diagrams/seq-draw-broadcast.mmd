@@ -1,0 +1,37 @@
+```mermaid
+sequenceDiagram
+    participant GM as GameMaster Console
+    participant API as REST API
+    participant Orch as Game Orchestrator
+    participant RNG as RNG Service
+    participant DB as PostgreSQL
+    participant WS as WebSocket Server
+    participant Redis as Redis Pub/Sub
+    participant P as Player PWA
+    participant BS as Big-Screen
+
+    GM->>API: POST /games/{id}/draw
+    API->>Orch: drawNextNumber(gameId)
+    Orch->>RNG: generateNextDraw(seed, sequence)
+    RNG-->>Orch: {letter: 'B', number: 15}
+
+    Orch->>DB: INSERT draw (game_id, sequence, letter, number, timestamp)
+    DB-->>Orch: Draw persisted (ID: 789)
+
+    Orch-->>API: Draw complete {id: 789, letter: 'B', number: 15}
+    API-->>GM: 200 OK {draw}
+
+    API->>WS: Broadcast draw event
+    WS->>Redis: PUBLISH game:456:draw {drawId, letter, number, timestamp}
+
+    Redis->>WS: Fanout to subscribers
+    WS-->>P: draw_announced {letter: 'B', number: 15, drawId: 789}
+    WS-->>BS: draw_announced {letter: 'B', number: 15, drawId: 789}
+    WS-->>GM: draw_announced {letter: 'B', number: 15, drawId: 789}
+
+    Note over P: Player marks B15 on card
+    Note over BS: Display updates with B15
+    Note over GM: Console shows latest draw
+
+    Note over Redis,P: Target: <200ms from draw to UI update
+```

@@ -1,0 +1,108 @@
+# Caddyfile for Bingo Platform
+# Supports both offline (HTTP) and cloud (HTTPS) modes via environment variables
+
+# Global options
+{
+	# Admin API for health checks
+	admin 0.0.0.0:2019
+}
+
+# Main site configuration
+{$DOMAIN:localhost} {
+	# Root directory for static files
+	root * /srv
+
+	# Serve UI applications
+	handle_path /screen* {
+		root * /srv/screen
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle_path /console* {
+		root * /srv/console
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle_path /player* {
+		root * /srv/player
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Default root redirect to screen
+	handle / {
+		redir /screen/ permanent
+	}
+
+	# API reverse proxy
+	handle_path /api* {
+		reverse_proxy api:3000 {
+			header_up Host {upstream_hostport}
+			header_down Access-Control-Allow-Origin *
+		}
+	}
+
+	# API documentation
+	handle_path /docs* {
+		reverse_proxy api:3000
+	}
+
+	# Metrics endpoint
+	handle /metrics {
+		reverse_proxy api:3000
+	}
+
+	# Health check endpoint
+	handle /health {
+		reverse_proxy api:3000
+	}
+
+	# Socket.io reverse proxy for realtime service
+	handle_path /socket.io* {
+		reverse_proxy realtime:4000 {
+			header_up Host {upstream_hostport}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+
+			# WebSocket support
+			header_up Connection {>Connection}
+			header_up Upgrade {>Upgrade}
+		}
+	}
+
+	# Compression
+	encode zstd gzip
+
+	# Security headers
+	header {
+		# Disable FLoC
+		Permissions-Policy "interest-cohort=()"
+
+		# Security headers for cloud deployment
+		{$SECURITY_HEADERS}
+	}
+
+	# TLS configuration (auto-HTTPS in production)
+	@production {
+		expression {$NODE_ENV} == "production"
+	}
+	tls {$EMAIL:admin@bingo.local} {
+		@production {
+			# Production uses Let's Encrypt
+		}
+		@notproduction {
+			# Development uses local certs
+			internal
+		}
+	}
+
+	# Logging
+	log {
+		output stdout
+		format console
+		level INFO
+	}
+}

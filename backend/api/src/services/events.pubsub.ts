@@ -46,11 +46,6 @@ async function publish(room: string, event: string, data: unknown): Promise<void
   await redis.publish(EVENT_CHANNEL, JSON.stringify(envelope));
 }
 
-export async function publishDraw(gameId: string | number, seq: number, value: number) {
-  const msg = JSON.stringify({ room: `game:${gameId}`, event: "draw:next", data: { seq, value } });
-  await redis.publish(config.eventChannel, msg);
-}
-
 export async function publishDrawEvent(gameId: string, data: DrawEventData): Promise<void> {
   await publish(`game:${gameId}`, 'draw:next', data);
 }

@@ -18,6 +18,9 @@ coverage/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.offline
+.env.cloud
+!.env.*.example
 
 # Logs
 npm-debug.log*
@@ -50,3 +53,32 @@ apps/player/public/icon-*.png
 # Temp
 tmp/
 temp/
+.tmp/
+
+# Docker & DevOps
+*.pid
+*.seed
+*.pid.lock
+/data/
+prometheus_data/
+grafana_data/
+loki_data/
+
+# Backups
+backups/
+*.sql
+*.sql.gz
+*.dump
+
+# Secrets
+secrets/
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+
+# Cache
+.cache/
+.parcel-cache/
+.vite/

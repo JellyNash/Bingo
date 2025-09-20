@@ -11,13 +11,31 @@ export default function App() {
     const [connected, setConnected] = useState(false);
     const [numbers, setNumbers] = useState([]);
     const [claims, setClaims] = useState([]);
+    const [players, setPlayers] = useState([]);
     const [auto, setAuto] = useState(false);
     const [intervalMs, setIntervalMs] = useState(5000);
     const [busy, setBusy] = useState(false);
     const [log, setLog] = useState([]);
+    const [showCreateGame, setShowCreateGame] = useState(false);
+    const [isAuthorized, setIsAuthorized] = useState(false);
     useEffect(() => {
-        if (!token)
+        if (!token) {
+            pushLog("No auth token provided");
             return;
+        }
+        // Parse JWT to check role (basic check, should validate server-side)
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            const isAdmin = payload.role === 'admin' || payload.role === 'host';
+            setIsAuthorized(isAdmin);
+            if (!isAdmin) {
+                pushLog("Unauthorized: Admin/Host role required");
+            }
+        }
+        catch {
+            setIsAuthorized(false);
+            pushLog("Invalid token format");
+        }
         const s = connectConsole("/console", token);
         s.on("connect", () => setConnected(true));
         s.io.on("reconnect_attempt", () => setConnected(false));
@@ -28,9 +46,19 @@ export default function App() {
         });
         s.on("claim:result", (payload) => {
             // when server broadcasts resolved claims, show in a feed
-            pushLog(`Claim result: ${payload.nickname ?? "?"} • ${payload.win ? "APPROVED" : "DENIED"} (${payload.pattern ?? "-"})`);
+            pushLog(`Claim result: ${payload.nickname ?? "?"} • ${payload.result === 'approved' ? "APPROVED" : "DENIED"} (${payload.pattern ?? "-"})`);
             // keep a short feed only
-            setClaims((c) => [{ claimId: payload.claimId, nickname: payload.nickname, pattern: payload.pattern, win: payload.win }, ...c].slice(0, 6));
+            setClaims((c) => [{
+                    claimId: payload.claimId,
+                    nickname: payload.nickname,
+                    pattern: payload.pattern,
+                    win: payload.result === 'approved'
+                }, ...c].slice(0, 6));
+        });
+        s.on("state:update", (payload) => {
+            if (payload.players) {
+                setPlayers(payload.players);
+            }
         });
         return () => {
             s.close();
@@ -79,7 +107,40 @@ export default function App() {
             setBusy(false);
         }
     }
-    return (_jsxs("div", { className: "min-h-full p-6", children: [_jsx(Bar, { show: !connected, text: "Reconnecting\u2026" }), _jsxs("header", { className: "flex items-center justify-between", children: [_jsx("div", { className: "text-lg font-semibold", children: "GameMaster Console" }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsxs(Pill, { children: ["Game #", gameId] }), _jsx(Pill, { children: connected ? "Connected" : "Offline" })] })] }), _jsxs("div", { className: "mt-6 grid lg:grid-cols-3 gap-6", children: [_jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70", children: "Controls" }), _jsxs("div", { className: "mt-3 flex flex-wrap gap-2", children: [_jsx("button", { onClick: drawNext, disabled: busy || !connected, className: "px-4 py-2 rounded-xl bg-accent/20 hover:bg-accent/30 border border-accent/40", children: "Draw Next" }), _jsx("button", { onClick: () => toggleAuto(!auto), disabled: busy || !connected, className: "px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20", children: auto ? "Disable Auto-Draw" : "Enable Auto-Draw" }), _jsx("button", { onClick: pause, disabled: busy || !connected, className: "px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20", children: "Pause" })] }), _jsxs("div", { className: "mt-4", children: [_jsx("label", { className: "text-sm opacity-70", children: "Auto interval (ms)" }), _jsx("input", { type: "range", min: 2000, max: 10000, step: 250, value: intervalMs, onChange: (e) => setIntervalMs(+e.target.value), className: "w-full" }), _jsxs("div", { className: "text-sm opacity-70 mt-1", children: [intervalMs, " ms"] })] })] }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Recent Draws" }), _jsx("div", { className: "grid grid-cols-6 gap-2", children: numbers.slice(-24).reverse().map((n, i) => (_jsx("div", { className: "h-12 rounded-xl grid place-items-center bg-card border border-white/10", children: _jsx("div", { className: "font-semibold", children: label(n) }) }, i))) })] }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Claims (latest)" }), _jsxs("ul", { className: "space-y-2", children: [claims.map((c, i) => (_jsxs("li", { className: "p-3 rounded-xl bg-card border border-white/10", children: [_jsxs("div", { className: "text-sm", children: [c.nickname ?? "Player", " \u2022 ", c.pattern ?? "-"] }), _jsx("div", { className: `text-xs ${c.win ? "text-emerald-300" : "text-red-300"}`, children: c.win ? "APPROVED" : "DENIED" })] }, i))), !claims.length && _jsx("div", { className: "text-sm opacity-50", children: "No claims yet" })] })] })] }), _jsxs("section", { className: "mt-6 rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Recent Activity" }), _jsx("pre", { className: "text-xs whitespace-pre-wrap opacity-80", children: log.join("\n") })] }), _jsxs("footer", { className: "mt-6 text-xs opacity-60", children: ["Open with: ", _jsx("kbd", { children: "?g=42&token=<JWT>" })] })] }));
+    async function createGame() {
+        setBusy(true);
+        try {
+            const gameData = await apiPost(`/games`, token, {
+                name: "New Bingo Game",
+                winnerLimit: 3,
+                autoDrawEnabled: false,
+                autoDrawInterval: 5
+            });
+            const openData = await apiPost(`/games/${gameData.id}/open`, token);
+            pushLog(`Created game: ${gameData.id}`);
+            window.location.search = `?g=${gameData.id}&token=${token}`;
+        }
+        catch (e) {
+            pushLog(`Create game failed: ${e.message}`);
+        }
+        finally {
+            setBusy(false);
+        }
+    }
+    async function applyPenalty(playerId) {
+        setBusy(true);
+        try {
+            await apiPost(`/games/${gameId}/penalty`, token, { playerId, reason: "Manual penalty" });
+            pushLog(`Penalty applied to ${playerId}`);
+        }
+        catch (e) {
+            pushLog(`Penalty failed: ${e.message}`);
+        }
+        finally {
+            setBusy(false);
+        }
+    }
+    return (_jsxs("div", { className: "min-h-full p-6", children: [_jsx(Bar, { show: !connected, text: "Reconnecting\u2026" }), _jsxs("header", { className: "flex items-center justify-between", children: [_jsx("div", { className: "text-lg font-semibold", children: "GameMaster Console" }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsxs(Pill, { children: ["Game #", gameId] }), _jsx(Pill, { children: connected ? "Connected" : "Offline" })] })] }), !isAuthorized && (_jsxs("div", { className: "mt-6 p-6 rounded-2xl border border-feedback-danger/40 bg-feedback-danger/10", children: [_jsx("div", { className: "text-feedback-danger font-semibold mb-2", children: "Authorization Required" }), _jsx("div", { className: "text-sm opacity-80", children: "You need admin or host role to access console controls." })] })), showCreateGame && (_jsx("div", { className: "fixed inset-0 bg-black/80 grid place-items-center p-6 z-50", children: _jsxs("div", { className: "bg-surface-raised p-6 rounded-2xl border border-border-subtle max-w-md w-full", children: [_jsx("h2", { className: "text-lg font-semibold mb-4", children: "Create New Game" }), _jsx("button", { onClick: createGame, disabled: busy, className: "w-full px-4 py-2 rounded-xl bg-brand-primary hover:bg-brand-primary-accent", children: "Create and Open Game" }), _jsx("button", { onClick: () => setShowCreateGame(false), className: "w-full mt-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15", children: "Cancel" })] }) })), _jsxs("div", { className: "mt-6 grid lg:grid-cols-3 gap-6", children: [_jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70", children: "Controls" }), _jsxs("div", { className: "mt-3 flex flex-wrap gap-2", children: [_jsx("button", { onClick: () => setShowCreateGame(true), disabled: busy || !isAuthorized, className: "px-4 py-2 rounded-xl bg-brand-primary/20 hover:bg-brand-primary/30 border border-brand-primary/40", children: "New Game" }), _jsx("button", { onClick: drawNext, disabled: busy || !connected || !isAuthorized, className: "px-4 py-2 rounded-xl bg-accent/20 hover:bg-accent/30 border border-accent/40", children: "Draw Next" }), _jsx("button", { onClick: () => toggleAuto(!auto), disabled: busy || !connected || !isAuthorized, className: "px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20", children: auto ? "Disable Auto-Draw" : "Enable Auto-Draw" }), _jsx("button", { onClick: pause, disabled: busy || !connected || !isAuthorized, className: "px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20", children: "Pause" })] }), _jsxs("div", { className: "mt-4", children: [_jsx("label", { className: "text-sm opacity-70", children: "Auto interval (ms)" }), _jsx("input", { type: "range", min: 2000, max: 10000, step: 250, value: intervalMs, onChange: (e) => setIntervalMs(+e.target.value), className: "w-full" }), _jsxs("div", { className: "text-sm opacity-70 mt-1", children: [intervalMs, " ms"] })] })] }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Recent Draws" }), _jsx("div", { className: "grid grid-cols-6 gap-2", children: numbers.slice(-24).reverse().map((n, i) => (_jsx("div", { className: "h-12 rounded-xl grid place-items-center bg-card border border-white/10", children: _jsx("div", { className: "font-semibold", children: label(n) }) }, i))) })] }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Claims (latest)" }), _jsxs("ul", { className: "space-y-2", children: [claims.map((c, i) => (_jsxs("li", { className: "p-3 rounded-xl bg-card border border-white/10", children: [_jsxs("div", { className: "text-sm", children: [c.nickname ?? "Player", " \u2022 ", c.pattern ?? "-"] }), _jsx("div", { className: `text-xs ${c.win ? "text-emerald-300" : "text-red-300"}`, children: c.win ? "APPROVED" : "DENIED" })] }, i))), !claims.length && _jsx("div", { className: "text-sm opacity-50", children: "No claims yet" })] })] }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Players" }), _jsxs("ul", { className: "space-y-2", children: [players.slice(0, 10).map((p, i) => (_jsxs("li", { className: "p-2 rounded-xl bg-card border border-white/10 flex justify-between items-center", children: [_jsxs("div", { children: [_jsx("div", { className: "text-sm", children: p.nickname }), _jsxs("div", { className: "text-xs opacity-60", children: ["Strikes: ", p.strikes, " \u2022 ", p.status] })] }), _jsx("button", { onClick: () => applyPenalty(p.playerId), disabled: busy || !isAuthorized, className: "px-2 py-1 text-xs rounded bg-feedback-danger/20 hover:bg-feedback-danger/30", children: "Penalty" })] }, i))), !players.length && _jsx("div", { className: "text-sm opacity-50", children: "No players yet" })] })] })] }), _jsxs("section", { className: "mt-6 rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Recent Activity" }), _jsx("pre", { className: "text-xs whitespace-pre-wrap opacity-80", children: log.join("\n") })] }), _jsxs("footer", { className: "mt-6 text-xs opacity-60", children: ["Open with: ", _jsx("kbd", { children: "?g=42&token=<JWT>" })] })] }));
 }
 function label(n) {
     if (n <= 15)

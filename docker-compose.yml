@@ -1,0 +1,196 @@
+version: '3.9'
+
+# Common environment variables
+x-env-common: &env_common
+  JWT_SECRET: ${JWT_SECRET}
+  GAME_SEED_SECRET: ${GAME_SEED_SECRET}
+  EVENT_CHANNEL: ${EVENT_CHANNEL:-bingo:events}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  NODE_ENV: ${NODE_ENV:-production}
+
+networks:
+  bingo:
+    driver: bridge
+
+volumes:
+  pg_data:
+  redis_data:
+  grafana_data:
+  loki_data:
+
+services:
+  # Database
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bingo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bingo}
+      POSTGRES_DB: bingo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bingo -d bingo"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks: [bingo]
+    profiles: ["offline", "cloud", "obs"]
+    restart: unless-stopped
+
+  # Cache and pub/sub
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - redis_data:/data
+    networks: [bingo]
+    profiles: ["offline", "cloud", "obs"]
+    restart: unless-stopped
+
+  # API service
+  api:
+    build:
+      context: .
+      dockerfile: backend/api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *env_common
+      DATABASE_URL: ${DATABASE_URL:-postgresql://bingo:bingo@postgres:5432/bingo}
+      PORT: ${API_PORT:-3000}
+    networks: [bingo]
+    restart: unless-stopped
+    profiles: ["offline", "cloud", "obs"]
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  # Realtime service (Socket.IO)
+  realtime:
+    build:
+      context: .
+      dockerfile: backend/realtime/Dockerfile
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *env_common
+      PORT: ${REALTIME_PORT:-4000}
+    networks: [bingo]
+    restart: unless-stopped
+    profiles: ["offline", "cloud", "obs"]
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  # Web server (Caddy with static UI apps)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    depends_on:
+      api:
+        condition: service_started
+      realtime:
+        condition: service_started
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      EMAIL: ${EMAIL:-admin@bingo.local}
+      NODE_ENV: ${NODE_ENV:-production}
+      SECURITY_HEADERS: ${SECURITY_HEADERS:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    networks: [bingo]
+    restart: unless-stopped
+    profiles: ["offline", "cloud"]
+    volumes:
+      - /data/caddy/data:/data
+      - /data/caddy/config:/config
+
+  # --- Observability Stack ---
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+      - '--storage.tsdb.retention.size=10GB'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    networks: [bingo]
+    profiles: ["obs"]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.3
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_INSTALL_PLUGINS: grafana-piechart-panel,redis-datasource
+      GF_SERVER_ROOT_URL: ${GF_SERVER_ROOT_URL:-http://localhost:3001}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    ports:
+      - "3001:3000"
+    networks: [bingo]
+    profiles: ["obs"]
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:2.9.8
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - loki_data:/loki
+      - ./infra/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+    ports:
+      - "3100:3100"
+    networks: [bingo]
+    profiles: ["obs"]
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./infra/promtail/config.yml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log:ro
+    command: ["-config.file=/etc/promtail/config.yml"]
+    networks: [bingo]
+    profiles: ["obs"]
+    restart: unless-stopped
+
+  # Optional: mDNS announcer for .local domain (offline events)
+  mdns:
+    image: hardillb/traefik-avahi-helper:latest
+    network_mode: host
+    environment:
+      CONTAINER_NAME: web
+      AVAHI_HOST: bingo
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    profiles: ["mdns"]
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:

@@ -10,11 +10,46 @@ const JWT_SECRET = process.env.JWT_SECRET ?? "dev_only_replace_me";
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const EVENT_CHANNEL = process.env.EVENT_CHANNEL ?? "bingo:events";
 
+// Metrics counters
+const metrics = {
+  connections: 0,
+  disconnections: 0,
+  eventsEmitted: 0,
+  eventsReceived: 0,
+  authFailures: 0,
+};
+
 const app = Fastify({ logger: true });
 await app.register(helmet);
 await app.register(jwt, { secret: JWT_SECRET });
 
 app.get("/health", async () => ({ ok: true, service: "realtime" }));
+
+app.get("/metrics", async () => {
+  // Basic Prometheus format
+  const lines = [
+    "# HELP realtime_connections_total Total number of socket connections",
+    "# TYPE realtime_connections_total counter",
+    `realtime_connections_total ${metrics.connections}`,
+    "",
+    "# HELP realtime_disconnections_total Total number of socket disconnections",
+    "# TYPE realtime_disconnections_total counter",
+    `realtime_disconnections_total ${metrics.disconnections}`,
+    "",
+    "# HELP realtime_events_emitted_total Total number of events emitted to clients",
+    "# TYPE realtime_events_emitted_total counter",
+    `realtime_events_emitted_total ${metrics.eventsEmitted}`,
+    "",
+    "# HELP realtime_events_received_total Total number of events received from broker",
+    "# TYPE realtime_events_received_total counter",
+    `realtime_events_received_total ${metrics.eventsReceived}`,
+    "",
+    "# HELP realtime_auth_failures_total Total number of authentication failures",
+    "# TYPE realtime_auth_failures_total counter",
+    `realtime_auth_failures_total ${metrics.authFailures}`,
+  ];
+  return lines.join("\n");
+});
 
 // Important: attach Socket.IO to Fastify's native server
 const io = new Server(app.server, {
@@ -30,11 +65,15 @@ io.adapter(createAdapter(pub, sub));
 async function authMiddleware(socket: any, next: any) {
   try {
     const token = socket.handshake.auth?.token ?? socket.handshake.query?.token;
-    if (!token) return next(new Error("no token"));
+    if (!token) {
+      metrics.authFailures++;
+      return next(new Error("no token"));
+    }
     const payload = await app.jwt.verify(token);
     (socket as any).ctx = payload; // { gameId, playerId?, role? }
     next();
   } catch {
+    metrics.authFailures++;
     next(new Error("auth failed"));
   }
 }
@@ -46,11 +85,20 @@ function makeNamespace(name: string) {
   const nsp = io.of(name);
   nsp.use(authMiddleware);
   nsp.on("connection", (socket) => {
+    metrics.connections++;
     const { gameId, role } = (socket as any).ctx ?? {};
-    if (!gameId) return socket.disconnect(true);
+    if (!gameId) {
+      metrics.disconnections++;
+      return socket.disconnect(true);
+    }
     const room = `game:${gameId}`;
     socket.join(room);
     socket.emit("state:update", { connected: true, ns: name, role, room });
+    metrics.eventsEmitted++;
+
+    socket.on("disconnect", () => {
+      metrics.disconnections++;
+    });
   });
   return nsp;
 }
@@ -65,11 +113,13 @@ brokerSub.subscribe(EVENT_CHANNEL, (err: Error | null | undefined) => {
 brokerSub.on("message", (_channel: string, message: string) => {
   try {
     const { room, event, data } = JSON.parse(message);
+    metrics.eventsReceived++;
     let delivered = 0;
     for (const ns of NAMESPACES) {
       const sockets = io.of(ns).to(room);
       sockets.emit(event, data);
       delivered++;
+      metrics.eventsEmitted++;
     }
     app.log.info({ event, room, delivered }, "broker→socket broadcast");
   } catch (e) {

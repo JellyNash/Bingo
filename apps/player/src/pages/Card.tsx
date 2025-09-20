@@ -6,6 +6,7 @@ import WinnersList from '../components/WinnersList';
 import StatusBar from '../components/StatusBar';
 import ReconnectToast from '../components/ReconnectToast';
 import { getWinningPatterns, PATTERN_NAMES } from '../lib/patterns';
+import type { BingoPattern } from '../lib/api';
 
 interface CardProps {
   onLogout: () => void;
@@ -13,7 +14,7 @@ interface CardProps {
 
 export default function Card({ onLogout }: CardProps) {
   const { card, drawn, winners, status, auth, connection } = usePlayerStore();
-  const [selectedPattern, setSelectedPattern] = useState<string>('');
+  const [selectedPattern, setSelectedPattern] = useState<BingoPattern | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [nextRetryIn, setNextRetryIn] = useState(0);
@@ -61,7 +62,7 @@ export default function Card({ onLogout }: CardProps) {
 
     setClaiming(true);
     try {
-      await usePlayerStore.getState().submitClaim(selectedPattern);
+      await usePlayerStore.getState().submitClaim(selectedPattern as BingoPattern);
     } catch (error) {
       console.error('Claim failed:', error);
     } finally {
@@ -116,8 +117,8 @@ export default function Card({ onLogout }: CardProps) {
                 Available Patterns
               </label>
               <select
-                value={selectedPattern}
-                onChange={(e) => setSelectedPattern(e.target.value)}
+                value={selectedPattern || ''}
+                onChange={(e) => setSelectedPattern(e.target.value as BingoPattern)}
                 className="input"
               >
                 {availablePatterns.map((pattern) => (
@@ -148,7 +149,7 @@ export default function Card({ onLogout }: CardProps) {
         disabled={claiming || !selectedPattern || isCooldown || !connection.online}
         claiming={claiming}
         cooldownEndTime={status.cooldownEndTime}
-        pattern={selectedPattern ? PATTERN_NAMES[selectedPattern as keyof typeof PATTERN_NAMES] : ''}
+        pattern={selectedPattern ? PATTERN_NAMES[selectedPattern] : ''}
       />
     </div>
   );

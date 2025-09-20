@@ -37,6 +37,10 @@ export default function CellButton({
     setIsToggling(true);
     try {
       await usePlayerStore.getState().toggleMark(position);
+      // Gentle vibration on successful mark
+      if ('vibrate' in navigator) {
+        navigator.vibrate(10);
+      }
     } catch (error) {
       console.error('Failed to toggle mark:', error);
     } finally {

@@ -1,0 +1,46 @@
+```mermaid
+C4Container
+    title Container diagram for Bingo Platform
+
+    Person(player, "Player", "Using PWA")
+    Person(gamemaster, "GameMaster", "Using Console")
+    Person(audience, "Audience", "Using Big-Screen")
+
+    Container_Boundary(c1, "Bingo Platform") {
+        Container(pwa, "Player PWA", "React + Vite", "Progressive Web App for players")
+        Container(console, "GameMaster Console", "React + Vite", "Web interface for game control")
+        Container(bigscreen, "Big-Screen Display", "React + Vite", "Public display for audience")
+
+        Container(api, "REST API", "Fastify + Node.js", "HTTP API for game operations")
+        Container(realtime, "Realtime Engine", "Socket.IO + Node.js", "WebSocket server for live events")
+        Container(orchestrator, "Game Orchestrator", "Node.js Library", "Server-authoritative game logic")
+
+        ContainerDb(postgres, "PostgreSQL", "Database", "Persistent game state and audit logs")
+        ContainerDb(redis, "Redis", "Cache + Message Broker", "Session cache and pub/sub for scaling")
+    }
+
+    System_Ext(mdns, "mDNS", "Local discovery")
+    System_Ext(docker, "Docker Compose", "Offline deployment")
+
+    Rel(player, pwa, "Uses", "HTTPS/WSS")
+    Rel(gamemaster, console, "Uses", "HTTPS/WSS")
+    Rel(audience, bigscreen, "Views", "HTTPS/WSS")
+
+    Rel(pwa, api, "API calls", "HTTPS")
+    Rel(console, api, "API calls", "HTTPS")
+    Rel(bigscreen, api, "API calls", "HTTPS")
+
+    Rel(pwa, realtime, "Live events", "WebSocket")
+    Rel(console, realtime, "Live events", "WebSocket")
+    Rel(bigscreen, realtime, "Live events", "WebSocket")
+
+    Rel(api, orchestrator, "Delegates logic", "Function calls")
+    Rel(realtime, orchestrator, "Delegates logic", "Function calls")
+    Rel(orchestrator, postgres, "Reads/writes", "SQL")
+    Rel(realtime, redis, "Pub/sub", "Redis Protocol")
+    Rel(api, redis, "Cache/sessions", "Redis Protocol")
+
+    Rel(docker, mdns, "Advertises bingo.local")
+
+    UpdateLayoutConfig($c4ShapeInRow="2", $c4BoundaryInRow="1")
+```

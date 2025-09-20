@@ -4,6 +4,10 @@ export interface ServerToClientEvents {
   "state:update": (data: { connected: boolean; ns: string; role?: string; room: string }) => void;
   "draw:next": (data: { seq: number; value: number }) => void;
   "claim:result": (data: any) => void;
+  "media:cue": (data: {
+    type: 'number' | 'bingo' | 'stinger' | 'intro' | 'music:start' | 'music:stop' | 'music:toggle';
+    number?: number;
+  }) => void;
 }
 
 export interface ClientToServerEvents {}

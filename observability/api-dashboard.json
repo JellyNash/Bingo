@@ -1,0 +1,32 @@
+{
+  "title": "API Metrics — Placeholder",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Request Rate",
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(api_requests_total[1m]))"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Request Duration",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(api_request_duration_ms_bucket[5m])))"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Claim Validation Duration",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(claim_validation_ms_bucket[5m])))"
+        }
+      ]
+    }
+  ]
+}

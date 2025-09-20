@@ -1,0 +1,22 @@
+{
+  "name": "bingo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bingo Game Platform - Monorepo",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "format": "pnpm -r format",
+    "clean": "pnpm -r clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}

@@ -1,58 +1,63 @@
-import type { paths } from '../types/openapi';
+import type { paths, components } from '../types/openapi';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+// Extract types from OpenAPI schema
+type JoinRequest = components['schemas']['JoinRequest'];
+type JoinResponse = components['schemas']['JoinResponse'];
+type ResumeRequest = components['schemas']['ResumeRequest'];
+type ResumeResponse = components['schemas']['ResumeResponse'];
+type MarkRequest = components['schemas']['MarkRequest'];
+type MarkResponse = components['schemas']['MarkResponse'];
+type ClaimRequest = components['schemas']['ClaimRequest'];
+type ClaimResponse = components['schemas']['ClaimResponse'];
+type GameSnapshot = components['schemas']['GameSnapshot'];
+type BingoPattern = components['schemas']['BingoPattern'];
 
-type JoinResponse = paths['/join']['post']['responses']['200']['content']['application/json'];
-type ResumeResponse = paths['/resume']['post']['responses']['200']['content']['application/json'];
-type SnapshotResponse = paths['/games/{id}/snapshot']['get']['responses']['200']['content']['application/json'];
-type MarkResponse = paths['/cards/{cardId}/mark']['post']['responses']['200']['content']['application/json'];
-type ClaimResponse = paths['/cards/{cardId}/claim']['post']['responses']['200']['content']['application/json'];
-
-export interface AuthState {
-  sessionToken?: string;
-  resumeToken?: string;
-  onTokenUpdate?: (sessionToken: string) => void;
-  onResumeToken?: (resumeToken: string) => void;
-}
+export type { BingoPattern, JoinResponse, ResumeResponse, GameSnapshot, ClaimResponse, MarkResponse };
 
 class ApiClient {
-  private auth: AuthState = {};
+  private baseUrl: string;
+  private sessionToken: string = '';
+  private resumeToken: string = '';
 
-  setAuth(auth: AuthState) {
-    this.auth = auth;
+  constructor(baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000') {
+    this.baseUrl = baseUrl;
+  }
+
+  setAuth(options: { sessionToken?: string; resumeToken?: string }) {
+    if (options.sessionToken !== undefined) this.sessionToken = options.sessionToken;
+    if (options.resumeToken !== undefined) this.resumeToken = options.resumeToken;
   }
 
   private async request<T>(
     path: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryOn401 = true
   ): Promise<T> {
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...(options.headers as Record<string, string> || {}),
     };
 
-    if (this.auth.sessionToken) {
-      headers['Authorization'] = `Bearer ${this.auth.sessionToken}`;
+    if (this.sessionToken) {
+      headers['Authorization'] = `Bearer ${this.sessionToken}`;
     }
 
-    let response = await fetch(`${API_URL}${path}`, {
+    const response = await fetch(`${this.baseUrl}${path}`, {
       ...options,
       headers,
     });
 
-    // Handle 401 with resume retry
-    if (response.status === 401 && this.auth.resumeToken) {
-      const resumed = await this.resume(this.auth.resumeToken);
-      if (resumed && resumed.sessionToken) {
-        // Update token and retry
-        this.auth.sessionToken = resumed.sessionToken;
-        this.auth.onTokenUpdate?.(resumed.sessionToken);
-
-        headers['Authorization'] = `Bearer ${resumed.sessionToken}`;
-        response = await fetch(`${API_URL}${path}`, {
-          ...options,
-          headers,
-        });
+    // Handle 401 with resume token retry
+    if (response.status === 401 && retryOn401 && this.resumeToken) {
+      try {
+        const resumed = await this.resume(this.resumeToken);
+        if (resumed && resumed.newSessionToken) {
+          this.sessionToken = resumed.newSessionToken;
+          // Retry original request with new token
+          return this.request<T>(path, options, false);
+        }
+      } catch {
+        // Resume failed, throw original 401
       }
     }
 
@@ -64,48 +69,94 @@ class ApiClient {
     return response.json();
   }
 
+  // Core API methods matching OpenAPI contract
   async join(pin: string, nickname: string): Promise<JoinResponse> {
-    return this.request<JoinResponse>('/join', {
+    const body: JoinRequest = { pin, nickname };
+    const response = await this.request<JoinResponse>('/join', {
       method: 'POST',
-      body: JSON.stringify({ pin, nickname }),
+      body: JSON.stringify(body),
     });
+
+    // Store tokens from response
+    if (response.sessionToken) {
+      this.sessionToken = response.sessionToken;
+    }
+    if (response.resumeToken) {
+      this.resumeToken = response.resumeToken;
+    }
+
+    return response;
   }
 
   async resume(resumeToken: string): Promise<ResumeResponse | null> {
     try {
-      return await this.request<ResumeResponse>('/resume', {
-        method: 'POST',
-        body: JSON.stringify({ resumeToken }),
-      });
+      const body: ResumeRequest = { resumeToken };
+      const response = await this.request<ResumeResponse>(
+        '/resume',
+        {
+          method: 'POST',
+          body: JSON.stringify(body),
+        },
+        false // Don't retry on 401 for resume itself
+      );
+
+      // Update session token from response
+      if (response.newSessionToken) {
+        this.sessionToken = response.newSessionToken;
+      }
+
+      return response;
     } catch {
       return null;
     }
   }
 
-  async getSnapshot(gameId: string): Promise<SnapshotResponse> {
-    return this.request<SnapshotResponse>(`/games/${gameId}/snapshot`);
+  async getSnapshot(gameId: string): Promise<GameSnapshot> {
+    return this.request<GameSnapshot>(`/games/${gameId}/snapshot`);
   }
 
-  async markCell(
+  async mark(
+    gameId: string, // Not used in path but kept for consistency
     cardId: string,
     position: number,
     marked: boolean
   ): Promise<MarkResponse> {
-    const idemKey = crypto.randomUUID();
+    // Convert position to cell identifier (FREE for center, or letter+number)
+    let positionStr: string;
+    if (position === 12) {
+      positionStr = 'FREE';
+    } else {
+      const col = position % 5;
+      const row = Math.floor(position / 5);
+      const letters = ['B', 'I', 'N', 'G', 'O'];
+      positionStr = `${letters[col]}${row + 1}`;
+    }
+
+    const body: MarkRequest = {
+      position: positionStr,
+      marked,
+      idempotencyKey: crypto.randomUUID(),
+    };
+
     return this.request<MarkResponse>(`/cards/${cardId}/mark`, {
       method: 'POST',
-      body: JSON.stringify({ position, marked, idemKey }),
+      body: JSON.stringify(body),
     });
   }
 
-  async submitClaim(
+  async claim(
+    gameId: string, // Not used in path but kept for consistency
     cardId: string,
-    pattern: string
+    pattern: BingoPattern
   ): Promise<ClaimResponse> {
-    const idemKey = crypto.randomUUID();
+    const body: ClaimRequest = {
+      pattern,
+      idempotencyKey: crypto.randomUUID(),
+    };
+
     return this.request<ClaimResponse>(`/cards/${cardId}/claim`, {
       method: 'POST',
-      body: JSON.stringify({ pattern, idemKey }),
+      body: JSON.stringify(body),
     });
   }
 }

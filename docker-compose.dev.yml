@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: bingo
+      POSTGRES_PASSWORD: dev_password
+      POSTGRES_DB: bingo
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bingo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend/api
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://bingo:dev_password@postgres:5432/bingo
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev_jwt_secret
+      GAME_SEED_SECRET: dev_game_secret
+      EVENT_CHANNEL: bingo:events
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/api:/app
+      - /app/node_modules
+
+  realtime:
+    build:
+      context: ./backend/realtime
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev_jwt_secret
+      EVENT_CHANNEL: bingo:events
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/realtime:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:

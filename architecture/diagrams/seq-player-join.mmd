@@ -1,0 +1,39 @@
+```mermaid
+sequenceDiagram
+    participant P as Player PWA
+    participant API as REST API
+    participant Auth as Auth Middleware
+    participant RNG as RNG Service
+    participant DB as PostgreSQL
+    participant WS as WebSocket Server
+    participant Redis as Redis
+
+    P->>API: POST /games/{pin}/join {nickname}
+    API->>Auth: Validate request (rate limit)
+    Auth-->>API: Request validated
+
+    API->>DB: Check game state, player limits
+    DB-->>API: Game open, slots available
+
+    API->>RNG: Generate HMAC-signed Bingo card
+    RNG-->>API: Card with signature
+
+    API->>DB: Insert player enrollment + card
+    DB-->>API: Player created (ID: 123)
+
+    API->>API: Generate JWT session token
+    API-->>P: 201 Created {token, playerId, card}
+
+    P->>WS: Connect with JWT token
+    WS->>Auth: Validate JWT
+    Auth-->>WS: Token valid, playerId: 123
+
+    WS->>Redis: Join room game:456:players
+    Redis-->>WS: Room joined
+
+    WS->>Redis: Publish player_joined event
+    Redis->>WS: Broadcast to game:456:admin
+    WS-->>P: Welcome message + game state
+
+    Note over P,Redis: Player is now connected and ready to play
+```

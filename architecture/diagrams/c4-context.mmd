@@ -1,0 +1,22 @@
+```mermaid
+C4Context
+    title System Context diagram for Bingo Platform
+
+    Person(player, "Player", "Event attendee using PWA on mobile/desktop")
+    Person(gamemaster, "GameMaster", "Event facilitator managing game via web console")
+    Person(audience, "Audience", "On-site viewers watching Big-Screen display")
+
+    System(bingo_platform, "Bingo Platform", "Real-time multiplayer Bingo system with server-authoritative logic")
+
+    System_Ext(mdns, "mDNS Service", "Local network discovery (bingo.local)")
+    System_Ext(pwa_cache, "PWA Cache", "Service Worker for offline assets")
+
+    Rel(player, bingo_platform, "Joins game, marks numbers, claims Bingo", "WebSocket/HTTPS")
+    Rel(gamemaster, bingo_platform, "Controls game flow, manages claims", "WebSocket/HTTPS")
+    Rel(audience, bingo_platform, "Views live game state", "WebSocket/HTTPS")
+
+    Rel(bingo_platform, mdns, "Advertises service", "mDNS")
+    Rel(player, pwa_cache, "Cached assets for offline", "Service Worker")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
+```

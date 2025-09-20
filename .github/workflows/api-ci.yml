@@ -1,0 +1,72 @@
+name: API CI
+
+on:
+  push:
+    paths:
+      - 'backend/api/**'
+  pull_request:
+    paths:
+      - 'backend/api/**'
+
+jobs:
+  api-ci:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bingo
+          POSTGRES_PASSWORD: bingo
+          POSTGRES_DB: bingo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bingo" --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql://bingo:bingo@localhost:5432/bingo
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci_secret_replace
+      TOKEN_TTL_MIN: 15
+      RATE_LIMIT_JOIN_PER_MIN: 5
+      RATE_LIMIT_CLAIM_PER_MIN: 5
+      IDEMP_TTL_SEC: 300
+      PENALTY_STRIKES: 3
+      PENALTY_COOLDOWN_MS: 30000
+      RL_LOCKOUT_MS: 120000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install pnpm
+        run: npm install -g pnpm
+      - name: Install dependencies
+        run: |
+          cd backend/api
+          pnpm install
+      - name: Generate Prisma Client
+        run: |
+          cd backend/api
+          pnpm prisma generate
+      - name: Lint
+        run: |
+          cd backend/api
+          pnpm lint
+      - name: Build
+        run: |
+          cd backend/api
+          pnpm build
+      - name: Migrate
+        run: |
+          cd backend/api
+          pnpm migrate -- --name ci-init
+      - name: Test
+        run: |
+          cd backend/api
+          pnpm test

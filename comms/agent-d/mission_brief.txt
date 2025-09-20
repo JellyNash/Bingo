@@ -1,0 +1,19 @@
+Mission: Implement the Fastify API that satisfies contracts/openapi/bingo.yaml, integrates Prisma (Postgres), Redis (rate-limit/idempotency/pubsub), JWT auth, and the orchestrator library.
+Deliverables:
+
+Fastify server with typed route handlers for all MVP endpoints (create/open/join/resume/draw/auto/pause/undo if in-scope/mark/claim/penalty/snapshot).
+
+Auth: short-lived JWTs (role: host/player), verify on protected routes and WS handshake; resume token flow.
+
+Idempotency & rate limiting (Redis token bucket + idem keys with TTL).
+
+Persistence: Prisma migrations reflecting db/prisma/schema.prisma; transactions for draw/claim.
+
+Realtime fan-out: publish events to Redis channels consumed by Realtime service.
+
+Observability: OpenAPI UI at /docs, Prometheus /metrics, basic OTel spans (HTTP route span + custom spans for draw→emit, claim→result).
+
+Tests: unit + integration (happy/edge paths), seed data fixtures, and CI script.
+Constraints: server-authoritative; perf target draw→UI <200ms (LAN) end-to-end; penalties: 3 strikes→30s cooldown; RL abuse → 120s lockout.
+Signature: Append “Approved by Agent D — Backend API” to README when done.
+Report back with a Completion Report (format below).

@@ -1,0 +1,43 @@
+# Build stage for all UI apps
+FROM node:20-alpine AS build
+WORKDIR /app
+
+# Enable pnpm
+RUN corepack enable
+
+# Copy workspace files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+# Copy all app package.json files
+COPY apps/screen/package.json apps/screen/
+COPY apps/console/package.json apps/console/
+COPY apps/player/package.json apps/player/
+
+# Install all dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy all app source code
+COPY apps/ apps/
+COPY tsconfig.json ./
+
+# Build all apps
+RUN pnpm --filter=@bingo/screen build
+RUN pnpm --filter=@bingo/console build
+RUN pnpm --filter=@bingo/player build
+
+# Production stage with Caddy
+FROM caddy:2.8-alpine
+
+# Copy built assets from build stage
+COPY --from=build /app/apps/screen/dist /srv/screen
+COPY --from=build /app/apps/console/dist /srv/console
+COPY --from=build /app/apps/player/dist /srv/player
+
+# Copy Caddy configuration
+COPY infra/caddy/Caddyfile /etc/caddy/Caddyfile
+
+# Health check on Caddy admin endpoint
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s \
+  CMD wget -qO- http://localhost:2019/config/ || exit 1
+
+EXPOSE 80 443

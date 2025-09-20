@@ -1,0 +1,408 @@
+// Bingo Platform - Prisma Schema
+// Version: 1.0
+// Author: Agent C - System Architect
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ================================
+// GAME MANAGEMENT
+// ================================
+
+model Game {
+  id                String   @id @default(cuid())
+  pin               String   @unique @db.VarChar(6) // 6-digit game PIN
+  name              String?  @db.VarChar(100)
+  status            GameStatus @default(LOBBY)
+
+  // Game Configuration
+  maxPlayers        Int      @default(1000)
+  allowLateJoin     Boolean  @default(true)
+  autoDrawInterval  Int      @default(8) // seconds, range 5-20
+  winnerLimit       Int      @default(1) // multi-winner support
+
+  // Game State
+  currentSequence   Int      @default(0)
+  lastDrawAt        DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  pausedAt          DateTime?
+
+  // Security & Fairness
+  rngSeed           String   @db.VarChar(64) // HMAC-SHA256 seed
+  gameSignature     String   @db.VarChar(128) // Cryptographic game integrity
+
+  // Metadata
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  createdBy         String?  @db.VarChar(50) // GameMaster identifier
+
+  // Relations
+  players           Player[]
+  draws             Draw[]
+  claims            Claim[]
+  sessions          Session[]
+  auditLogs         AuditLog[]
+
+  @@index([pin])
+  @@index([status])
+  @@index([createdAt])
+  @@map("games")
+}
+
+enum GameStatus {
+  LOBBY      // Players can join
+  OPEN       // Game created, waiting to start
+  ACTIVE     // Game in progress
+  PAUSED     // Temporarily paused
+  COMPLETED  // Game finished
+  CANCELLED  // Game cancelled
+}
+
+// ================================
+// PLAYER MANAGEMENT
+// ================================
+
+model Player {
+  id            String      @id @default(cuid())
+  gameId        String
+  nickname      String      @db.VarChar(50)
+
+  // Player State
+  status        PlayerStatus @default(ACTIVE)
+  strikes       Int         @default(0)
+  isDisqualified Boolean    @default(false)
+  cooldownUntil DateTime?
+
+  // Session Management
+  joinedAt      DateTime    @default(now())
+  lastSeenAt    DateTime    @default(now())
+  ipAddress     String?     @db.VarChar(45) // IPv6 support
+  userAgent     String?     @db.VarChar(500)
+
+  // Relations
+  game          Game        @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  bingoCard     BingoCard?
+  claims        Claim[]
+  penalties     Penalty[]
+  sessions      Session[]
+  auditLogs     AuditLog[]
+
+  @@unique([gameId, nickname])
+  @@index([gameId])
+  @@index([status])
+  @@map("players")
+}
+
+enum PlayerStatus {
+  ACTIVE      // Normal gameplay
+  COOLDOWN    // Temporary penalty
+  DISQUALIFIED // Removed from game
+  LEFT        // Voluntarily left
+}
+
+// ================================
+// BINGO CARDS & GAME CONTENT
+// ================================
+
+model BingoCard {
+  id            String   @id @default(cuid())
+  playerId      String   @unique
+
+  // Card Content (JSON array of arrays)
+  // 5x5 grid: [[B1,B2,B3,B4,B5], [I16,I17,...], ...]
+  numbers       Json     // number[][]
+
+  // Security & Integrity
+  cardSignature String   @db.VarChar(128) // HMAC signature
+  seedUsed      String   @db.VarChar(64)  // RNG seed for this card
+
+  // Player Marks (JSON object)
+  // {"B1": true, "I16": true, "FREE": true}
+  marks         Json     @default("{}")
+
+  // Metadata
+  generatedAt   DateTime @default(now())
+
+  // Relations
+  player        Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId])
+  @@map("bingo_cards")
+}
+
+model Draw {
+  id          String   @id @default(cuid())
+  gameId      String
+  sequence    Int      // Draw order within game
+
+  // Draw Content
+  letter      String   @db.VarChar(1) // B, I, N, G, O
+  number      Int      // 1-75
+
+  // Timing
+  drawnAt     DateTime @default(now())
+  drawnBy     String?  @db.VarChar(50) // GameMaster or 'AUTO'
+
+  // Security
+  drawSignature String @db.VarChar(128) // Cryptographic integrity
+
+  // Relations
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  auditLogs   AuditLog[]
+
+  @@unique([gameId, sequence])
+  @@unique([gameId, letter, number]) // Prevent duplicate draws
+  @@index([gameId])
+  @@index([drawnAt])
+  @@map("draws")
+}
+
+// ================================
+// CLAIMS & VALIDATION
+// ================================
+
+model Claim {
+  id            String      @id @default(cuid())
+  gameId        String
+  playerId      String
+
+  // Claim Details
+  pattern       BingoPattern
+  isValid       Boolean?
+  timestamp     DateTime    @default(now()) // Microsecond precision critical
+
+  // Validation Results
+  status        ClaimStatus @default(PENDING)
+  validatedAt   DateTime?
+  validatedBy   String?     @db.VarChar(50) // 'SYSTEM' or GameMaster ID
+
+  // Claim Response
+  denialReason  String?     @db.VarChar(200)
+  isWinner      Boolean     @default(false)
+  winPosition   Int?        // 1st, 2nd place for multi-winner
+
+  // Relations
+  game          Game        @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player        Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  auditLogs     AuditLog[]
+
+  @@index([gameId, timestamp]) // Critical for simultaneous claim resolution
+  @@index([playerId])
+  @@index([status])
+  @@map("claims")
+}
+
+enum BingoPattern {
+  ROW_1
+  ROW_2
+  ROW_3
+  ROW_4
+  ROW_5
+  COL_1
+  COL_2
+  COL_3
+  COL_4
+  COL_5
+  DIAGONAL_1  // Top-left to bottom-right
+  DIAGONAL_2  // Top-right to bottom-left
+  FOUR_CORNERS
+  FULL_CARD   // Blackout (future)
+}
+
+enum ClaimStatus {
+  PENDING    // Being validated
+  ACCEPTED   // Valid claim, potential winner
+  DENIED     // Invalid claim
+  SUPERSEDED // Valid but not winner (multi-winner scenario)
+}
+
+// ================================
+// PENALTIES & MODERATION
+// ================================
+
+model Penalty {
+  id          String      @id @default(cuid())
+  gameId      String
+  playerId    String
+
+  // Penalty Details
+  type        PenaltyType
+  reason      String      @db.VarChar(200)
+  severity    Int         @default(1) // Strike count for this penalty
+
+  // Timing
+  appliedAt   DateTime    @default(now())
+  appliedBy   String      @db.VarChar(50) // 'SYSTEM' or GameMaster ID
+  expiresAt   DateTime?   // For temporary cooldowns
+
+  // Status
+  isActive    Boolean     @default(true)
+  clearedAt   DateTime?
+  clearedBy   String?     @db.VarChar(50)
+  clearReason String?     @db.VarChar(200)
+
+  // Relations
+  player      Player      @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  auditLogs   AuditLog[]
+
+  @@index([playerId])
+  @@index([appliedAt])
+  @@index([isActive])
+  @@map("penalties")
+}
+
+enum PenaltyType {
+  FALSE_CLAIM     // Invalid Bingo claim
+  RATE_LIMIT      // Too many requests
+  SUSPICIOUS      // Unusual activity pattern
+  MANUAL          // GameMaster applied
+  AUTO_STRIKE     // Automatic system penalty
+}
+
+// ================================
+// SESSION MANAGEMENT
+// ================================
+
+model Session {
+  id            String      @id @default(cuid())
+  gameId        String
+  playerId      String?
+
+  // Session Details
+  socketId      String?     @unique @db.VarChar(100)
+  resumeToken   String      @unique @db.VarChar(128) // JWT resume capability
+
+  // Connection Info
+  ipAddress     String      @db.VarChar(45)
+  userAgent     String?     @db.VarChar(500)
+  namespace     String      @db.VarChar(50) // game:<id>, admin:<id>, display:<id>
+  room          String?     @db.VarChar(100)
+
+  // Timing
+  connectedAt   DateTime    @default(now())
+  lastSeenAt    DateTime    @default(now())
+  disconnectedAt DateTime?
+  expiresAt     DateTime    // Resume token expiry
+
+  // Status
+  isActive      Boolean     @default(true)
+
+  // Relations
+  game          Game        @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  player        Player?     @relation(fields: [playerId], references: [id], onDelete: SetNull)
+
+  @@index([gameId])
+  @@index([playerId])
+  @@index([resumeToken])
+  @@index([isActive])
+  @@map("sessions")
+}
+
+// ================================
+// AUDIT & COMPLIANCE
+// ================================
+
+model AuditLog {
+  id          String     @id @default(cuid())
+  gameId      String?
+  playerId    String?
+
+  // Event Details
+  action      String     @db.VarChar(100)
+  entity      String     @db.VarChar(50)  // 'game', 'player', 'claim', etc.
+  entityId    String?    @db.VarChar(50)
+
+  // Event Data
+  oldValues   Json?      // Previous state
+  newValues   Json?      // New state
+  metadata    Json?      // Additional context
+
+  // Attribution
+  actorType   String     @db.VarChar(20)  // 'player', 'gamemaster', 'system'
+  actorId     String?    @db.VarChar(50)
+  ipAddress   String?    @db.VarChar(45)
+  userAgent   String?    @db.VarChar(500)
+
+  // Timing
+  timestamp   DateTime   @default(now())
+
+  // Relations
+  game        Game?      @relation(fields: [gameId], references: [id], onDelete: SetNull)
+  player      Player?    @relation(fields: [playerId], references: [id], onDelete: SetNull)
+  draw        Draw?      @relation(fields: [entityId], references: [id], onDelete: SetNull)
+  claim       Claim?     @relation(fields: [entityId], references: [id], onDelete: SetNull)
+  penalty     Penalty?   @relation(fields: [entityId], references: [id], onDelete: SetNull)
+
+  @@index([gameId, timestamp])
+  @@index([playerId, timestamp])
+  @@index([action])
+  @@index([timestamp])
+  @@map("audit_log")
+}
+
+// ================================
+// RATE LIMITING & SECURITY
+// ================================
+
+model RateLimit {
+  id          String     @id @default(cuid())
+
+  // Identifier
+  key         String     @unique @db.VarChar(100) // IP:action or player:action
+
+  // Rate Limit State
+  tokens      Int        @default(0)     // Available tokens
+  lastRefill  DateTime   @default(now()) // Last token refill
+  windowStart DateTime   @default(now()) // Current window start
+
+  // Configuration
+  maxTokens   Int        @default(10)    // Bucket capacity
+  refillRate  Int        @default(1)     // Tokens per second
+  windowMs    Int        @default(60000) // Window duration
+
+  // Violation Tracking
+  violations  Int        @default(0)
+  lastViolation DateTime?
+  blockedUntil DateTime?
+
+  // Metadata
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([key])
+  @@index([blockedUntil])
+  @@map("rate_limits")
+}
+
+model IdempotencyKey {
+  id          String     @id @default(cuid())
+
+  // Request Identification
+  key         String     @unique @db.VarChar(128) // Client-provided idempotency key
+
+  // Request Details
+  endpoint    String     @db.VarChar(100)
+  method      String     @db.VarChar(10)
+  playerId    String?    @db.VarChar(50)
+  gameId      String?    @db.VarChar(50)
+
+  // Response Caching
+  statusCode  Int?
+  response    Json?      // Cached response body
+
+  // Timing
+  createdAt   DateTime   @default(now())
+  expiresAt   DateTime   // Automatic cleanup
+
+  @@index([key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}

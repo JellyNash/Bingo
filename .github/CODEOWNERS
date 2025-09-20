@@ -1,2 +1,48 @@
-# Auto-reviewers for documentation assets
-/docs/** @agent-a @agent-b @agent-c
+# CODEOWNERS for Bingo Game System
+
+# Global owners
+* @team-lead
+
+# Documentation
+/docs/ @documentation-team
+/README.md @documentation-team
+*.md @documentation-team
+
+# Core Architecture
+/docs/architecture/ @architects
+/contracts/ @architects
+
+# Backend Services
+/backend/api/ @backend-team
+/backend/orchestrator/ @game-logic-team
+/backend/realtime/ @realtime-team
+
+# Frontend Applications
+/apps/screen/ @frontend-team
+/apps/console/ @frontend-team
+/apps/player/ @frontend-team
+
+# Design System
+/apps/_design-tokens/ @design-team
+/design/ @design-team
+
+# Database
+/db/ @database-team
+*.prisma @database-team
+
+# DevOps & Infrastructure
+/docker-compose*.yml @devops-team
+/Dockerfile @devops-team
+/.github/workflows/ @devops-team
+/observability/ @devops-team
+
+# Security & Compliance
+/docs/ops/fairness.md @security-team
+*.env.example @security-team
+/backend/api/src/plugins/auth.ts @security-team
+
+# Build & Testing
+/scripts/ @devops-team
+Makefile @devops-team
+*.spec.ts @qa-team
+*.test.ts @qa-team

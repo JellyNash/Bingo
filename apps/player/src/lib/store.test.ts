@@ -15,12 +15,11 @@ describe('PlayerStore', () => {
       },
       card: {
         grid: [],
-        marks: 0,
+        marks: { 12: true },
       },
       drawn: {
-        drawnNumbers: [],
+        lastSeq: 0,
         drawnSet: new Set([0]),
-        lastDrawn: 0,
       },
       winners: [],
       status: {
@@ -73,8 +72,8 @@ describe('PlayerStore', () => {
       usePlayerStore.getState().clearSession();
 
       const state = usePlayerStore.getState();
-      expect(state.auth.sessionToken).toBe('');
-      expect(state.auth.resumeToken).toBe('');
+      expect(state.auth.sessionToken).toBeUndefined();
+      expect(state.auth.resumeToken).toBeUndefined();
       expect(localStorage.getItem('resumeToken')).toBeNull();
       expect(sessionStorage.getItem('sessionToken')).toBeNull();
     });
@@ -94,29 +93,27 @@ describe('PlayerStore', () => {
 
       const state = usePlayerStore.getState();
       expect(state.card.grid).toEqual(grid);
-      expect(state.card.marks).toBe(0b1000000000000); // Position 12 marked
+      expect(state.card.marks).toEqual({ 12: true }); // Position 12 marked
     });
   });
 
   describe('event handlers', () => {
     it('should handle draw:next event', () => {
       usePlayerStore.getState().handleDrawNext({
-        number: 42,
-        index: 5,
-        timestamp: Date.now(),
+        seq: 5,
+        value: 42,
       });
 
       const state = usePlayerStore.getState();
-      expect(state.drawn.drawnNumbers).toContain(42);
       expect(state.drawn.drawnSet.has(42)).toBe(true);
-      expect(state.drawn.lastDrawn).toBe(42);
+      expect(state.drawn.lastSeq).toBe(5);
     });
 
     it('should handle state:update event', () => {
       usePlayerStore.getState().handleStateUpdate({
-        gameStatus: 'ACTIVE',
+        status: 'ACTIVE',
         drawnNumbers: [1, 2, 3],
-        winners: [{ playerId: 'p1', nickname: 'Winner', rank: 1, pattern: 'H1' }],
+        winners: [{ playerId: 'p1', nickname: 'Winner', rank: 1, pattern: 'ROW_1' }],
       });
 
       const state = usePlayerStore.getState();
@@ -133,9 +130,10 @@ describe('PlayerStore', () => {
 
       usePlayerStore.getState().handleClaimResult({
         playerId: 'player123',
-        valid: true,
+        nickname: 'TestPlayer',
+        result: 'approved',
         rank: 2,
-        pattern: 'V3',
+        pattern: 'COL_3',
       });
 
       const state = usePlayerStore.getState();
@@ -143,19 +141,17 @@ describe('PlayerStore', () => {
         playerId: 'player123',
         nickname: 'TestPlayer',
         rank: 2,
-        pattern: 'V3',
+        pattern: 'COL_3',
       });
     });
 
     it('should handle player:penalty event', () => {
       usePlayerStore.setState({
         auth: { playerId: 'player123' },
-        status: { strikes: 0 },
+        status: { gameStatus: 'ACTIVE', strikes: 0 },
       });
 
       usePlayerStore.getState().handlePlayerPenalty({
-        playerId: 'player123',
-        reason: 'INVALID_CLAIM',
         strikes: 1,
         cooldownMs: 5000,
       });

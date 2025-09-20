@@ -1,13 +1,11 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePlayerStore } from '../lib/store';
 import PinInput from '../components/PinInput';
 import NicknameInput from '../components/NicknameInput';
 
-interface JoinProps {
-  onSuccess: () => void;
-}
-
-export default function Join({ onSuccess }: JoinProps) {
+export default function Join() {
+  const navigate = useNavigate();
   const [pin, setPin] = useState('');
   const [nickname, setNickname] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,7 +37,7 @@ export default function Join({ onSuccess }: JoinProps) {
     try {
       const success = await join(pin, nickname);
       if (success) {
-        onSuccess();
+        navigate('/card');
       } else {
         setError('Failed to join game. Please check your PIN.');
       }

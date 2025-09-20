@@ -1,0 +1,48 @@
+```mermaid
+sequenceDiagram
+    participant P1 as Player 1 PWA
+    participant P2 as Player 2 PWA
+    participant WS as WebSocket Server
+    participant Orch as Game Orchestrator
+    participant Val as Claim Validator
+    participant DB as PostgreSQL
+    participant Redis as Redis
+    participant GM as GameMaster Console
+
+    Note over P1,P2: Both players claim simultaneously
+    P1->>WS: claim_bingo {pattern: 'row-1'}
+    P2->>WS: claim_bingo {pattern: 'diagonal-1'}
+
+    WS->>Orch: validateClaim(player1, 'row-1', timestamp: 100)
+    WS->>Orch: validateClaim(player2, 'diagonal-1', timestamp: 102)
+
+    Orch->>Val: checkPattern(player1.card, draws, 'row-1')
+    Val-->>Orch: Valid claim
+
+    Orch->>Val: checkPattern(player2.card, draws, 'diagonal-1')
+    Val-->>Orch: Valid claim
+
+    Orch->>DB: BEGIN TRANSACTION
+    Orch->>DB: INSERT claim (player1, pattern, timestamp: 100, status: 'pending')
+    Orch->>DB: INSERT claim (player2, pattern, timestamp: 102, status: 'pending')
+
+    Orch->>Orch: Determine winner (earliest timestamp)
+    Note over Orch: Player 1 wins (timestamp 100 < 102)
+
+    Orch->>DB: UPDATE claim SET status='accepted' WHERE player_id=1
+    Orch->>DB: UPDATE claim SET status='denied' WHERE player_id=2
+    Orch->>DB: UPDATE game SET status='completed', winner_id=1
+    Orch->>DB: COMMIT TRANSACTION
+
+    Orch->>WS: Broadcast claim resolution
+    WS->>Redis: PUBLISH game:456:claim_resolved
+
+    Redis->>WS: Fanout to all subscribers
+    WS-->>P1: claim_accepted {winner: true}
+    WS-->>P2: claim_denied {reason: 'later_timestamp', winner_id: 1}
+    WS-->>GM: claim_resolved {winner: player1, loser: player2}
+
+    Note over P1: Celebration animation
+    Note over P2: Shows winner announcement
+    Note over GM: Game completion handling
+```

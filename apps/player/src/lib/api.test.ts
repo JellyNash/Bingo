@@ -8,6 +8,7 @@ describe('api client', () => {
     fetchMock = vi.fn();
     global.fetch = fetchMock;
     vi.clearAllMocks();
+    api.setAuth({ sessionToken: '', resumeToken: '' });
   });
 
   describe('setAuth', () => {
@@ -24,11 +25,10 @@ describe('api client', () => {
   describe('join', () => {
     it('should send join request with PIN and nickname', async () => {
       const mockResponse = {
-        sessionToken: 'session123',
+        newSessionToken: 'session123',
         resumeToken: 'resume456',
-        gameId: 'game789',
-        cardId: 'card012',
-        grid: [[1, 2, 3, 4, 5]],
+        player: { id: 'player123', gameId: 'game789', nickname: 'TestPlayer' },
+        card: { id: 'card012', grid: [[1, 2, 3, 4, 5]] },
       };
 
       fetchMock.mockResolvedValueOnce({
@@ -39,7 +39,7 @@ describe('api client', () => {
       const result = await api.join('123456', 'TestPlayer');
 
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining('/games/join'),
+        expect.stringContaining('/join'),
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
@@ -56,10 +56,9 @@ describe('api client', () => {
   describe('resume', () => {
     it('should send resume request with token', async () => {
       const mockResponse = {
-        sessionToken: 'newsession',
-        gameId: 'game123',
-        cardId: 'card456',
-        grid: [[1, 2, 3, 4, 5]],
+        newSessionToken: 'newsession',
+        player: { id: 'player123', gameId: 'game123', nickname: 'TestPlayer' },
+        card: { id: 'card456', grid: [[1, 2, 3, 4, 5]] },
       };
 
       fetchMock.mockResolvedValueOnce({
@@ -70,7 +69,7 @@ describe('api client', () => {
       const result = await api.resume('resumetoken123');
 
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining('/games/resume'),
+        expect.stringContaining('/resume'),
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ resumeToken: 'resumetoken123' }),
@@ -87,7 +86,7 @@ describe('api client', () => {
 
       const mockResponse = {
         success: true,
-        marks: 0b11111,
+        marks: { 0: true, 1: true },
       };
 
       fetchMock.mockResolvedValueOnce({
@@ -98,14 +97,13 @@ describe('api client', () => {
       const result = await api.mark('game123', 'card456', 12, true);
 
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining('/games/game123/mark'),
+        expect.stringContaining('/cards/card456/mark'),
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
             'Authorization': 'Bearer session123',
-            'X-Idempotency-Key': expect.stringContaining('card456-12-'),
           }),
-          body: JSON.stringify({ cardId: 'card456', position: 12, marked: true }),
+          body: expect.stringContaining('"position":"FREE"'),
         })
       );
 
@@ -128,17 +126,16 @@ describe('api client', () => {
         json: async () => mockResponse,
       });
 
-      const result = await api.claim('game123', 'card456', 'H1');
+      const result = await api.claim('game123', 'card456', 'ROW_1');
 
       expect(fetchMock).toHaveBeenCalledWith(
-        expect.stringContaining('/games/game123/claim'),
+        expect.stringContaining('/cards/card456/claim'),
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
             'Authorization': 'Bearer session123',
-            'X-Idempotency-Key': expect.stringContaining('card456-claim-'),
           }),
-          body: JSON.stringify({ cardId: 'card456', pattern: 'H1' }),
+          body: expect.stringContaining('"pattern":"ROW_1"'),
         })
       );
 
@@ -154,7 +151,6 @@ describe('api client', () => {
         gameStatus: 'ACTIVE',
         drawnNumbers: [1, 2, 3],
         winners: [],
-        strikes: 0,
       };
 
       fetchMock.mockResolvedValueOnce({

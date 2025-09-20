@@ -1,6 +1,11 @@
 import { motion, AnimatePresence } from "framer-motion";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { connectSocket } from "./lib.socket";
+import { WebAudioEngine } from "./media/engine";
+import { attachMediaController } from "./media/controller";
+import { useAudioUnlock, AudioUnlockOverlay } from "./media/unlock";
+import { useIntroVideo } from "./media/video";
+import { MediaControls } from "./components/MediaControls";
 
 function useQuery() {
   return new URLSearchParams(window.location.search);
@@ -92,56 +97,163 @@ const ReconnectingBar: React.FC<{ show: boolean }> = ({ show }) =>
 
 export default function App() {
   const q = useQuery();
-  const gameId = q.get("g") ?? "42";              // allow ?g=42
-  const token = q.get("token") ?? "";             // pass a JWT via ?token=...
+  const gameId = q.get("g") ?? "42";
+  const token = q.get("token") ?? "";
   const [connected, setConnected] = useState(false);
   const [current, setCurrent] = useState<number | undefined>(undefined);
   const [recent, setRecent] = useState<number[]>([]);
   const [win, setWin] = useState<any | undefined>();
   const [showWin, setShowWin] = useState(false);
 
+  // Media system
+  const [mediaEngine, setMediaEngine] = useState<WebAudioEngine | null>(null);
+  const [currentPack, setCurrentPack] = useState("/media-packs/placeholder/pack.json");
+  const audioUnlock = useAudioUnlock(mediaEngine?.getContext());
+  const { IntroVideoComponent, playIntro } = useIntroVideo();
+  const mediaControllerCleanup = useRef<(() => void) | null>(null);
+
+  // Available media packs
+  const mediaPacks = [
+    { url: "/media-packs/placeholder/pack.json", name: "Placeholder (Test)" },
+    { url: "/media-packs/english-female/pack.json", name: "English (Female)" }
+  ];
+
+  // Initialize media engine
   useEffect(() => {
-    if (!token) return;
+    const engine = new WebAudioEngine();
+    setMediaEngine(engine);
+
+    // Load saved volumes
+    engine.loadSavedVolumes();
+
+    // Set initial pack
+    engine.setPack(currentPack).then(() => {
+      console.log("Media pack loaded:", currentPack);
+    }).catch((err) => {
+      console.error("Failed to load media pack:", err);
+    });
+
+    // Setup video callback
+    engine.setVideoCallback(() => playIntro());
+
+    // Expose for dev testing
+    if (import.meta.env.DEV) {
+      (window as any).mediaEngine = engine;
+      (window as any).playIntro = playIntro;
+    }
+
+    return () => {
+      // Cleanup
+      if (mediaControllerCleanup.current) {
+        mediaControllerCleanup.current();
+      }
+    };
+  }, []);
+
+  // Handle pack changes
+  const handlePackChange = async (packUrl: string) => {
+    if (mediaEngine) {
+      try {
+        await mediaEngine.setPack(packUrl);
+        setCurrentPack(packUrl);
+        console.log("Switched to pack:", packUrl);
+      } catch (err) {
+        console.error("Failed to switch pack:", err);
+      }
+    }
+  };
+
+  // Socket connection and media controller
+  useEffect(() => {
+    if (!token || !mediaEngine) return;
+
     const socket = connectSocket("/screen", token);
+
+    // Setup socket events
     socket.on("connect", () => setConnected(true));
     socket.io.on("reconnect_attempt", () => setConnected(false));
     socket.io.on("reconnect", () => setConnected(true));
-    socket.on("state:update", (data) => {}); // reserved
+    socket.on("state:update", (data) => {});
+
+    // Visual state updates (keep existing)
     socket.on("draw:next", (data) => {
       setCurrent(data.value);
       setRecent((r) => [...r, data.value]);
     });
+
     socket.on("claim:result", (payload: any) => {
       setWin(payload);
       setShowWin(true);
-      // auto-hide after 5s
       setTimeout(() => setShowWin(false), 5000);
     });
-    // join room is handled by server via JWT {gameId}
-    return () => { socket.close(); };
-  }, [token, gameId]);
 
-  // Fullscreen hotkey
+    // Attach media controller for audio
+    const cleanup = attachMediaController(socket, mediaEngine);
+    mediaControllerCleanup.current = cleanup;
+
+    return () => {
+      cleanup();
+      socket.close();
+    };
+  }, [token, gameId, mediaEngine]);
+
+  // Audio unlock handler
+  const handleAudioUnlock = async () => {
+    await audioUnlock.unlock();
+    if (mediaEngine) {
+      await mediaEngine.resume();
+    }
+  };
+
+  // Fullscreen and chroma key hotkeys
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === "f") {
         document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
       }
       if (e.key.toLowerCase() === "c") {
-        // chroma key: toggle green bg
         document.body.classList.toggle("bg-[#00FF00]");
+      }
+      // Dev test keys
+      if (import.meta.env.DEV) {
+        if (e.key === "1") mediaEngine?.playNumber(Math.floor(Math.random() * 75) + 1);
+        if (e.key === "2") mediaEngine?.playSfx('bingo');
+        if (e.key === "3") mediaEngine?.musicToggle();
+        if (e.key === "4") playIntro();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [mediaEngine, playIntro]);
 
   return (
     <div className="relative min-h-full px-6 py-10">
       <Background />
       <ReconnectingBar show={!connected} />
+
+      {/* Audio Unlock Overlay */}
+      <AudioUnlockOverlay
+        show={!audioUnlock.unlocked}
+        onUnlock={handleAudioUnlock}
+      />
+
+      {/* Intro Video */}
+      <IntroVideoComponent />
+
+      {/* Media Controls */}
+      <MediaControls
+        engine={mediaEngine}
+        packs={mediaPacks}
+        currentPack={currentPack}
+        onPackChange={handlePackChange}
+      />
+
+      {/* Main Content */}
       <div className="max-w-7xl mx-auto">
-        <div className="text-center text-sm opacity-60">Game #{gameId} • Press <kbd>F</kbd> for Fullscreen • <kbd>C</kbd> Chroma</div>
+        <div className="text-center text-sm opacity-60">
+          Game #{gameId} • Press <kbd>F</kbd> for Fullscreen • <kbd>C</kbd> Chroma
+          {import.meta.env.DEV && " • Dev: 1=Number 2=Bingo 3=Music 4=Intro"}
+        </div>
         <div className="mt-4">
           <AnimatePresence mode="wait">
             <CurrentNumber key={current ?? -1} value={current} />
@@ -149,6 +261,7 @@ export default function App() {
           <RecentStrip recent={recent} />
         </div>
       </div>
+
       <WinnerBanner show={showWin} payload={win} onHide={() => setShowWin(false)} />
     </div>
   );

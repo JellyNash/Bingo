@@ -1,0 +1,71 @@
+```mermaid
+C4Component
+    title Component diagram for Bingo Platform API & Realtime Services
+
+    Container(pwa, "Player PWA", "React + Vite")
+    Container(console, "GameMaster Console", "React + Vite")
+    Container(bigscreen, "Big-Screen Display", "React + Vite")
+
+    Container_Boundary(api, "REST API (Fastify)") {
+        Component(auth_middleware, "Auth Middleware", "JWT validation")
+        Component(rate_limiter, "Rate Limiter", "Token bucket per IP/player")
+        Component(idempotency, "Idempotency Filter", "Redis-backed deduplication")
+
+        Component(game_controller, "Game Controller", "Game lifecycle endpoints")
+        Component(player_controller, "Player Controller", "Player management endpoints")
+        Component(admin_controller, "Admin Controller", "GameMaster operations")
+    }
+
+    Container_Boundary(realtime, "Realtime Engine (Socket.IO)") {
+        Component(ws_auth, "WebSocket Auth", "JWT handshake")
+        Component(namespaces, "Namespaces", "game:<id>, admin:<id>, display:<id>")
+        Component(rooms, "Rooms Manager", "Player/GM/Display rooms")
+        Component(broadcast, "Event Broadcaster", "Redis adapter for scaling")
+    }
+
+    Container_Boundary(orchestrator, "Game Orchestrator Library") {
+        Component(game_logic, "Game Logic", "Card generation, validation")
+        Component(rng_service, "RNG Service", "HMAC-SHA256 seeded random")
+        Component(claim_validator, "Claim Validator", "Pattern matching, timing")
+        Component(penalty_engine, "Penalty Engine", "Strike tracking, cooldowns")
+        Component(state_manager, "State Manager", "Game state persistence")
+    }
+
+    ContainerDb(postgres, "PostgreSQL", "Persistent storage")
+    ContainerDb(redis, "Redis", "Cache + Pub/Sub")
+
+    Rel(pwa, auth_middleware, "HTTP requests")
+    Rel(console, auth_middleware, "HTTP requests")
+    Rel(bigscreen, auth_middleware, "HTTP requests")
+
+    Rel(auth_middleware, rate_limiter, "Validated requests")
+    Rel(rate_limiter, idempotency, "Rate-limited requests")
+    Rel(idempotency, game_controller, "Deduplicated requests")
+    Rel(idempotency, player_controller, "Deduplicated requests")
+    Rel(idempotency, admin_controller, "Deduplicated requests")
+
+    Rel(pwa, ws_auth, "WebSocket connection")
+    Rel(console, ws_auth, "WebSocket connection")
+    Rel(bigscreen, ws_auth, "WebSocket connection")
+
+    Rel(ws_auth, namespaces, "Authenticated connections")
+    Rel(namespaces, rooms, "Namespace routing")
+    Rel(rooms, broadcast, "Room events")
+
+    Rel(game_controller, game_logic, "Delegates operations")
+    Rel(player_controller, game_logic, "Delegates operations")
+    Rel(admin_controller, game_logic, "Delegates operations")
+    Rel(broadcast, game_logic, "Delegates operations")
+
+    Rel(game_logic, rng_service, "Random generation")
+    Rel(game_logic, claim_validator, "Claim verification")
+    Rel(game_logic, penalty_engine, "Penalty management")
+    Rel(game_logic, state_manager, "State persistence")
+
+    Rel(state_manager, postgres, "SQL queries")
+    Rel(rate_limiter, redis, "Rate limit state")
+    Rel(idempotency, redis, "Idempotency keys")
+    Rel(broadcast, redis, "Pub/sub events")
+
+    UpdateLayoutConfig($c4ShapeInRow="2", $c4BoundaryInRow="1")
+```

@@ -1,0 +1,17 @@
+Mission: Produce a cohesive, accessible design system and high-fidelity prototypes for Big-Screen UI, GameMaster Console, and Player PWA that can be implemented 1:1 with Tailwind + shadcn/ui + Framer Motion.
+Must-haves: dark cinematic Big-Screen; desktop-first Console; mobile-first Player; 60fps-friendly animations; clear feedback states; a11y (WCAG contrast ≥4.5:1, focus states); responsive layouts; motion variants named and timed.
+Deliverables:
+
+Style Guide (colors, type, spacing) with Tailwind tokens.
+
+Component Library Definition + specs for all required components.
+
+Prototypes (Figma links) for Big-Screen, Console, Player (all primary states).
+
+Motion Spec (Framer Motion variants, durations, easings).
+
+Accessibility checklist outcomes.
+
+AV cues map (where sounds/video trigger).
+Integrations: Align with PRD acceptance criteria and NFRs; provide token files and motion.variants.ts skeleton for devs.
+Signature: Add “Approved by Agent B — UX/UI” on final docs.

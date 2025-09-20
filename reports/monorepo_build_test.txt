@@ -1,0 +1,46 @@
+No projects matched the filters "/mnt/c/projects/bingo" in "/mnt/c/projects/bingo"
+Scope: all 5 workspace projects
+backend/realtime build$ tsc -p tsconfig.json
+backend/orchestrator build$ tsc -p tsconfig.json
+apps/console build$ tsc -p tsconfig.json && vite build
+apps/screen build$ tsc -p tsconfig.json && vite build
+backend/orchestrator build: Done
+apps/screen build: vite v5.4.20 building for production...
+apps/console build: vite v5.4.20 building for production...
+backend/realtime build: Done
+apps/console build: transforming...
+apps/screen build: transforming...
+apps/console build: ✓ 62 modules transformed.
+apps/console build: rendering chunks...
+apps/console build: computing gzip size...
+apps/console build: dist/index.html                   0.39 kB │ gzip:  0.27 kB
+apps/console build: dist/assets/index-BS4xG3Fg.css    8.50 kB │ gzip:  2.47 kB
+apps/console build: dist/assets/index-CPt-8F3b.js   191.65 kB │ gzip: 60.87 kB
+apps/console build: ✓ built in 6.48s
+apps/console build: Done
+apps/screen build: ✓ 417 modules transformed.
+apps/screen build: rendering chunks...
+apps/screen build: computing gzip size...
+apps/screen build: dist/index.html                   0.40 kB │ gzip:  0.26 kB
+apps/screen build: dist/assets/index-BVo-Oeg0.css    9.00 kB │ gzip:  2.45 kB
+apps/screen build: dist/assets/index-CjykdtTx.js   302.56 kB │ gzip: 97.60 kB
+apps/screen build: ✓ built in 6.61s
+apps/screen build: Done
+backend/api build$ tsc -p tsconfig.json
+backend/api build: Done
+
+
+=== TESTS ===
+
+No projects matched the filters "/mnt/c/projects/bingo" in "/mnt/c/projects/bingo"
+Scope: all 5 workspace projects
+backend/realtime test$ vitest run
+backend/orchestrator test$ vitest run
+backend/realtime test:  RUN  v2.1.9 /mnt/c/projects/bingo/backend/realtime
+backend/realtime test: include: **/*.{test,spec}.?(c|m)[jt]s?(x)
+backend/realtime test: exclude:  **/node_modules/**, **/dist/**, **/cypress/**, **/.{idea,git,cache,output,temp}/**, **/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*
+backend/realtime test: No test files found, exiting with code 1
+backend/realtime test: Failed
+/mnt/c/projects/bingo/backend/realtime:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @bingo/realtime@0.1.0 test: `vitest run`
+Exit status 1
