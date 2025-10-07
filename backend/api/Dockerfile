@@ -54,6 +54,7 @@ RUN pnpm install --no-frozen-lockfile --prod
 # Copy built artifacts
 COPY --from=build /app/backend/orchestrator/dist ./backend/orchestrator/dist
 COPY --from=build /app/backend/api/dist ./backend/api/dist
+COPY --from=build /app/analytics ./analytics
 
 # Copy any additional files if needed (like prisma schemas if using prisma)
 # COPY --from=build /app/backend/api/prisma ./backend/api/prisma

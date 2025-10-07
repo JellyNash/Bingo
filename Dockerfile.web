@@ -35,6 +35,7 @@ COPY --from=build /app/apps/player/dist /srv/player
 
 # Copy Caddy configuration
 COPY infra/caddy/Caddyfile /etc/caddy/Caddyfile
+COPY infra/caddy/snippets /etc/caddy/snippets
 
 # Health check on Caddy admin endpoint
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s \
