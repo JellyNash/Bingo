@@ -88,7 +88,7 @@ async function start() {
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
   } catch (err) {
-    app.log.error(err);
+    app.log.error({ err });
     sessionCleanupService.stop(); // Stop cleanup service on error
     process.exit(1);
   }

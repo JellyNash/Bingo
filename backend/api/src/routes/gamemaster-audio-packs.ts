@@ -71,7 +71,7 @@ export default async function gameMasterAudioPacksRoutes(fastify: FastifyInstanc
         return reply.status(400).send(result);
       }
     } catch (error: any) {
-      fastify.log.error('Error uploading audio pack:', error);
+      fastify.log.error({ err: error }, 'Error uploading audio pack');
       return reply.status(500).send({
         success: false,
         errors: ['Failed to upload audio pack'],
@@ -97,7 +97,7 @@ export default async function gameMasterAudioPacksRoutes(fastify: FastifyInstanc
       return reply.send({ packs });
 
     } catch (error: any) {
-      fastify.log.error('Error listing audio packs:', error);
+      fastify.log.error({ err: error }, 'Error listing audio packs');
       return reply.status(500).send({
         error: 'Internal server error',
         message: 'Failed to retrieve audio packs'
@@ -123,7 +123,7 @@ export default async function gameMasterAudioPacksRoutes(fastify: FastifyInstanc
       return reply.send({ pack });
 
     } catch (error: any) {
-      fastify.log.error('Error getting audio pack:', error);
+      fastify.log.error({ err: error }, 'Error getting audio pack');
       return reply.status(500).send({
         error: 'Internal server error',
         message: 'Failed to retrieve audio pack'
@@ -152,7 +152,7 @@ export default async function gameMasterAudioPacksRoutes(fastify: FastifyInstanc
       });
 
     } catch (error: any) {
-      fastify.log.error('Error deleting audio pack:', error);
+      fastify.log.error({ err: error }, 'Error deleting audio pack');
       return reply.status(500).send({
         error: 'Internal server error',
         message: 'Failed to delete audio pack'

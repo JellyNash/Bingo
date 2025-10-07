@@ -130,7 +130,7 @@ export default async function analyticsIngest(app: FastifyInstance) {
           return reply.status(401).send({ error: 'bad_signature' });
         }
       } catch (err) {
-        app.log.error('HMAC validation error:', err as any);
+        app.log.error({ err }, 'HMAC validation error');
         sigValid = false;
       }
     }
@@ -197,7 +197,7 @@ export default async function analyticsIngest(app: FastifyInstance) {
         rejected: events.length - filtered.length
       });
     } catch (err) {
-      app.log.error('Analytics ingestion error:', err as any);
+      app.log.error({ err }, 'Analytics ingestion error');
       return reply.status(500).send({ error: 'Failed to ingest analytics events' });
     }
   });
