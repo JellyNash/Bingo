@@ -88,10 +88,9 @@
 	import snippets/security_headers.caddy header_common @offline
 	import snippets/security_headers.caddy header_cloud @production
 
-	# TLS configuration (auto-HTTPS in production)
-	@production {
-		expression {$NODE_ENV} == "production"
-	}
+	# TLS configuration for offline: use internal certs
+	tls internal
+
 	tls {$EMAIL:admin@bingo.local} {
 		@production {
 			# Production uses Let's Encrypt
