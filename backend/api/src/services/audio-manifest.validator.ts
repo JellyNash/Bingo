@@ -139,7 +139,7 @@ export class AudioManifestValidator {
    * Get required cue keys for a specific pack type and scope
    */
   static getRequiredCueKeys(type: AudioPackTypeT, scope: AudioScopeT): string[] {
-    return REQUIRED_CUE_KEYS[type][scope] || [];
+    return [...REQUIRED_CUE_KEYS[type][scope]];
   }
 
   /**
