@@ -45,7 +45,8 @@ export default async function claimRoute(fastify: FastifyInstance) {
       }
     }
 
-    await (fastify as any).enforceClaim(request, reply);
+    // Enforce per-user claim rate limits
+    await (fastify as any).rateLimit.enforceClaim(request, reply);
     if (reply.sent) return;
 
     const card = await prisma.bingoCard.findUnique({

@@ -31,7 +31,8 @@ export default async function markRoute(fastify: FastifyInstance) {
       }
     }
 
-    await ((fastify as any).enforceMark)(request, reply);
+    // Enforce per-user mark rate limits
+    await (fastify as any).rateLimit.enforceMark(request, reply);
     if (reply.sent) return;
 
     const card = await prisma.bingoCard.findUnique({
