@@ -88,18 +88,9 @@
 	import snippets/security_headers.caddy header_common @offline
 	import snippets/security_headers.caddy header_cloud @production
 
-	# TLS configuration for offline: use internal certs
+	# TLS configuration for offline profile
 	tls internal
 
-	tls {$EMAIL:admin@bingo.local} {
-		@production {
-			# Production uses Let's Encrypt
-		}
-		@notproduction {
-			# Development uses local certs
-			internal
-		}
-	}
 
 	# Logging
 	log {

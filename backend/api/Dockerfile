@@ -23,7 +23,10 @@ COPY tsconfig.json ./
 WORKDIR /app/backend/api
 RUN pnpm prisma generate
 WORKDIR /app
-RUN pnpm --filter @bingo/orchestrator build && pnpm --filter bingo-api exec tsc -p tsconfig.build.json
+RUN pnpm --filter @bingo/orchestrator build
+WORKDIR /app/backend/api
+RUN pnpm exec tsc -p tsconfig.build.json
+WORKDIR /app
 
 # Runtime stage
 FROM node:20-alpine AS runtime
