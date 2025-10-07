@@ -3,10 +3,10 @@
 #   import snippets/security_headers.caddy header_common @offline
 #   import snippets/security_headers.caddy header_cloud @production
 
-# This file relies on Caddy import args. The second arg ({args.1}) is the matcher
+# This file relies on Caddy import args. The second arg ({args[1]}) is the matcher
 # (e.g., @offline or @production). We apply headers conditionally via that matcher.
 
-header {args.1} {
+header {args[1]} {
 	# Baseline security headers
 	X-Frame-Options            SAMEORIGIN
 	X-Content-Type-Options     nosniff
@@ -19,6 +19,6 @@ header {args.1} {
 }
 
 # For production, enable HSTS (the matcher passed in prod is @production)
-header {args.1} {
+header {args[1]} {
 	Strict-Transport-Security  max-age=31536000; includeSubDomains; preload
 }

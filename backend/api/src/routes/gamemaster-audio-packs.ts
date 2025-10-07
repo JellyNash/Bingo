@@ -6,7 +6,8 @@
 import type { FastifyInstance } from 'fastify';
 import multipart from '@fastify/multipart';
 import { audioPacksService } from '../services/audio-packs.service.js';
-import { AudioPackType, AudioScope } from '@prisma/client';
+import PrismaPkg from '@prisma/client';
+const { AudioPackType, AudioScope } = PrismaPkg as any;
 
 interface UploadResponse {
   success: boolean;

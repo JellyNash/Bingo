@@ -4,7 +4,8 @@
  */
 
 import { z } from 'zod';
-import { AudioPackType, AudioScope } from '@prisma/client';
+import PrismaPkg from '@prisma/client';
+const { AudioPackType, AudioScope } = PrismaPkg as any;
 
 // Audio asset schema
 const AudioAssetSchema = z.object({

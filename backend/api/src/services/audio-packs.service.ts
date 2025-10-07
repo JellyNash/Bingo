@@ -8,7 +8,8 @@ import { join } from 'path';
 import { createHash } from 'crypto';
 import { prisma } from './prisma.js';
 import { AudioManifestValidator, type AudioManifest } from './audio-manifest.validator.js';
-import { AudioPackType, AudioScope } from '@prisma/client';
+import PrismaPkg from '@prisma/client';
+const { AudioPackType, AudioScope } = PrismaPkg as any;
 
 // Types
 export interface UploadedFile {
