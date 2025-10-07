@@ -8,6 +8,7 @@ import { join } from 'path';
 import { createHash } from 'crypto';
 import { prisma } from './prisma.js';
 import { AudioManifestValidator, type AudioManifest } from './audio-manifest.validator.js';
+import type { AudioPackType as AudioPackTypeT, AudioScope as AudioScopeT } from '@prisma/client';
 import PrismaPkg from '@prisma/client';
 const { AudioPackType, AudioScope } = PrismaPkg as any;
 
@@ -38,8 +39,8 @@ export interface AudioPackAssetSummary {
 export interface AudioPackInfo {
   id: string;
   packId: string;
-  type: AudioPackType;
-  scope: AudioScope;
+  type: AudioPackTypeT;
+  scope: AudioScopeT;
   locale?: string;
   name: string;
   description?: string;

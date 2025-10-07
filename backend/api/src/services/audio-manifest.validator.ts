@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import type { AudioPackType as AudioPackTypeT, AudioScope as AudioScopeT } from '@prisma/client';
 import PrismaPkg from '@prisma/client';
 const { AudioPackType, AudioScope } = PrismaPkg as any;
 
@@ -35,7 +36,7 @@ export type AudioManifest = any;
 export type AudioAssetData = any;
 
 // Required cue keys for different pack types and scopes
-const REQUIRED_CUE_KEYS: Record<AudioPackType, Record<AudioScope, string[]>> = {
+const REQUIRED_CUE_KEYS: Record<AudioPackTypeT, Record<AudioScopeT, string[]>> = {
   [AudioPackType.MUSIC]: {
     [AudioScope.LOBBY]: ['lobby-start', 'lobby-loop'],
     [AudioScope.IN_GAME]: ['game-start', 'game-loop', 'game-end'],
@@ -138,7 +139,7 @@ export class AudioManifestValidator {
   /**
    * Get required cue keys for a specific pack type and scope
    */
-  static getRequiredCueKeys(type: AudioPackType, scope: AudioScope): string[] {
+  static getRequiredCueKeys(type: AudioPackTypeT, scope: AudioScopeT): string[] {
     return REQUIRED_CUE_KEYS[type][scope] || [];
   }
 

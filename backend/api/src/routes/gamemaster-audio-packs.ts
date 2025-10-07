@@ -8,6 +8,7 @@ import multipart from '@fastify/multipart';
 import { audioPacksService } from '../services/audio-packs.service.js';
 import PrismaPkg from '@prisma/client';
 const { AudioPackType, AudioScope } = PrismaPkg as any;
+import type { AudioPackType as AudioPackTypeT, AudioScope as AudioScopeT } from '@prisma/client';
 
 interface UploadResponse {
   success: boolean;
@@ -17,8 +18,8 @@ interface UploadResponse {
 }
 
 interface ListQuery {
-  type?: AudioPackType;
-  scope?: AudioScope;
+  type?: AudioPackTypeT;
+  scope?: AudioScopeT;
   locale?: string;
   isActive?: boolean;
 }
