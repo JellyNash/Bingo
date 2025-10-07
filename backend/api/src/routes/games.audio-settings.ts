@@ -136,7 +136,7 @@ export default async function gamesAudioSettingsRoutes(fastify: FastifyInstance)
       });
 
     } catch (error: any) {
-      fastify.log.error('Error getting game audio settings:', error);
+      fastify.log.error({ err: error }, 'Error getting game audio settings');
       return reply.status(500).send({
         error: 'internal_server_error',
         message: 'Failed to retrieve audio settings'
