@@ -5,20 +5,21 @@ WORKDIR /app
 # Enable pnpm
 RUN corepack enable
 
-# Copy workspace files
+# Copy workspace manifests
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY backend/api/package.json backend/api/
+COPY backend/orchestrator/package.json backend/orchestrator/
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile --filter=@bingo/api...
+# Install workspace dependencies (api + orchestrator)
+RUN pnpm install --no-frozen-lockfile
 
-# Copy source code
+# Copy sources
 COPY backend/api/ backend/api/
+COPY backend/orchestrator/ backend/orchestrator/
 COPY tsconfig.json ./
 
-# Build the application
-WORKDIR /app/backend/api
-RUN pnpm add -D typescript && pnpm build
+# Build orchestrator then API
+RUN pnpm --filter @bingo/orchestrator build && pnpm --filter bingo-api build
 
 # Runtime stage
 FROM node:20-alpine AS runtime
@@ -32,14 +33,20 @@ RUN addgroup -S nodegrp && adduser -S nodeusr -G nodegrp
 # Enable pnpm
 RUN corepack enable
 
-# Copy package files
+########################
+# Install production deps
+########################
+
+# Copy workspace manifests
 COPY --from=build /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
 COPY --from=build /app/backend/api/package.json ./backend/api/
+COPY --from=build /app/backend/orchestrator/package.json ./backend/orchestrator/
 
-# Install production dependencies only
-RUN pnpm install --frozen-lockfile --filter=@bingo/api... --prod
+# Install only prod dependencies for needed packages
+RUN pnpm install --no-frozen-lockfile --prod
 
-# Copy built application
+# Copy built artifacts
+COPY --from=build /app/backend/orchestrator/dist ./backend/orchestrator/dist
 COPY --from=build /app/backend/api/dist ./backend/api/dist
 
 # Copy any additional files if needed (like prisma schemas if using prisma)
