@@ -16,10 +16,14 @@ RUN pnpm install --no-frozen-lockfile
 # Copy sources
 COPY backend/api/ backend/api/
 COPY backend/orchestrator/ backend/orchestrator/
+COPY analytics/ analytics/
 COPY tsconfig.json ./
 
-# Build orchestrator then API
-RUN pnpm --filter @bingo/orchestrator build && pnpm --filter bingo-api build
+# Generate Prisma client and build orchestrator then API
+WORKDIR /app/backend/api
+RUN pnpm prisma generate
+WORKDIR /app
+RUN pnpm --filter @bingo/orchestrator build && pnpm --filter bingo-api exec tsc -p tsconfig.build.json
 
 # Runtime stage
 FROM node:20-alpine AS runtime
@@ -41,9 +45,15 @@ RUN corepack enable
 COPY --from=build /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml ./
 COPY --from=build /app/backend/api/package.json ./backend/api/
 COPY --from=build /app/backend/orchestrator/package.json ./backend/orchestrator/
+COPY --from=build /app/backend/api/prisma ./backend/api/prisma
 
+WORKDIR /app
 # Install only prod dependencies for needed packages
 RUN pnpm install --no-frozen-lockfile --prod
+
+# Generate Prisma client in the runtime image
+WORKDIR /app/backend/api
+RUN pnpm dlx prisma generate
 
 # Copy built artifacts
 COPY --from=build /app/backend/orchestrator/dist ./backend/orchestrator/dist

@@ -22,11 +22,8 @@ const metrics = {
 
 const app = Fastify({ logger: true });
 await app.register(helmet);
-await app.register(jwt, {
+await app.register(jwt as any, {
   secret: JWT_SECRET,
-  sign: {
-    issuer: JWT_ISSUER,
-  },
   verify: {
     allowedIss: [JWT_ISSUER],
     maxAge: '12h',
