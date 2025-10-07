@@ -7,6 +7,7 @@ import { Redis } from "ioredis";
 
 const PORT = Number(process.env.PORT ?? 4000);
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev_only_replace_me";
+const JWT_ISSUER = process.env.JWT_ISSUER ?? "bingo-api";
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const EVENT_CHANNEL = process.env.EVENT_CHANNEL ?? "bingo:events";
 
@@ -21,7 +22,17 @@ const metrics = {
 
 const app = Fastify({ logger: true });
 await app.register(helmet);
-await app.register(jwt, { secret: JWT_SECRET });
+await app.register(jwt, {
+  secret: JWT_SECRET,
+  sign: {
+    issuer: JWT_ISSUER,
+  },
+  verify: {
+    allowedIss: [JWT_ISSUER],
+    maxAge: '12h',
+    clockTolerance: 5,
+  },
+});
 
 app.get("/health", async () => ({ ok: true, service: "realtime" }));
 

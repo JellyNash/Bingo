@@ -86,5 +86,11 @@ secrets/
 # Cache
 .cache/
 .parcel-cache/
-.vite/.code/
+.vite/
+.code/
 modelcontext.json
+
+# Dev artifacts
+dev-logs/
+apps/player/dev-dist/
+apps/*/.vite/

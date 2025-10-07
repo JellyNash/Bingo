@@ -1,9 +1,9 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { PrismaClient } from '@prisma/client';
+// Use shared Prisma client to avoid extra pools in tests/runtime
+import { prisma } from '../services/prisma.js';
 import crypto from 'node:crypto';
 import manifest from '../../../../analytics/schema/v1/manifest.json' with { type: 'json' };
 
-const prisma = new PrismaClient();
 
 interface IngestEvent {
   id: string;                 // uuid v4 from client

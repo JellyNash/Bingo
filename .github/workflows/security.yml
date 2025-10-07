@@ -63,7 +63,7 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -t bingo-${{ matrix.service }}:test \
-            -f backend/${{ matrix.service }}/Dockerfile.secure .
+            -f backend/${{ matrix.service }}/Dockerfile .
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
@@ -203,7 +203,7 @@ jobs:
 
       - name: Start application
         run: |
-          docker compose -f docker-compose.secure.yml up -d
+          docker compose -f docker-compose.yml up -d --build
           sleep 30  # Wait for services to be ready
 
       - name: Run OWASP ZAP Baseline Scan
