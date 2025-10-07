@@ -51,10 +51,6 @@ WORKDIR /app
 # Install only prod dependencies for needed packages
 RUN pnpm install --no-frozen-lockfile --prod
 
-# Generate Prisma client in the runtime image
-WORKDIR /app/backend/api
-RUN pnpm dlx prisma generate
-
 # Copy built artifacts
 COPY --from=build /app/backend/orchestrator/dist ./backend/orchestrator/dist
 COPY --from=build /app/backend/api/dist ./backend/api/dist
