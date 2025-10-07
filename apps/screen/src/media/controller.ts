@@ -7,16 +7,13 @@ export function attachMediaController(
   engine: MediaEngine
 ): () => void {
   // Handle draw:next events - auto-play the drawn number
-  const handleDrawNext = (data: { seq: number; value: number }) => {
+  const handleDrawNext = (data: { seq?: number; value: number; letter?: string }) => {
     console.log(`Received draw:next - playing number ${data.value}`);
     engine.playNumber(data.value);
   };
 
   // Handle media:cue events
-  const handleMediaCue = (cue: {
-    type: 'number' | 'bingo' | 'stinger' | 'intro' | 'music:start' | 'music:stop' | 'music:toggle';
-    number?: number;
-  }) => {
+  const handleMediaCue = (cue: { type: string; packId?: string; cueKey?: string; volume?: number; fadeInMs?: number; number?: number }) => {
     console.log(`Received media:cue - type: ${cue.type}`, cue.number);
 
     switch (cue.type) {
