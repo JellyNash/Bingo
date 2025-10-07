@@ -36,6 +36,11 @@ model Game {
   completedAt       DateTime?
   pausedAt          DateTime?
 
+  // Countdown Configuration
+  countdownStartAt         DateTime? // When countdown started
+  countdownDurationSeconds Int?      // Countdown duration in seconds
+  lobbyConfig              Json      @default("{}")
+
   // Security & Fairness
   rngSeed           String   @db.VarChar(64) // HMAC-SHA256 seed
   gameSignature     String   @db.VarChar(128) // Cryptographic game integrity
@@ -51,6 +56,8 @@ model Game {
   claims            Claim[]
   sessions          Session[]
   auditLogs         AuditLog[]
+  gameMasterSessions GameMasterSession[]
+  audioSettings     GameAudioSettings?
 
   @@index([pin])
   @@index([status])
@@ -413,6 +420,124 @@ model IdempotencyKey {
   @@index([key])
   @@index([expiresAt])
   @@map("idempotency_keys")
+}
+
+// ================================
+// GAMEMASTER SESSION MANAGEMENT
+// ================================
+
+model GameMasterSession {
+  id              String    @id @default(cuid())
+  sessionId       String    @unique @map("session_id")
+  pinHash         String    @map("pin_hash")
+  ipAddress       String    @map("ip_address")
+  currentGameId   String?   @map("current_game_id")
+  currentGame     Game?     @relation(fields: [currentGameId], references: [id])
+  createdAt       DateTime  @default(now()) @map("created_at")
+  expiresAt       DateTime  @map("expires_at")
+  lastActivity    DateTime  @default(now()) @map("last_activity")
+  hostToken       String?   @map("host_token")
+  screenToken     String?   @map("screen_token")
+  tokenExpiresAt  DateTime? @map("token_expires_at")
+  lastScreenAccess DateTime? @map("last_screen_access")
+  lastScreenIp     String?   @map("last_screen_ip")
+
+  @@map("gamemaster_sessions")
+  @@index([sessionId])
+  @@index([expiresAt])
+  @@index([lastActivity])
+}
+
+// ================================
+// AUDIO SYSTEM
+// ================================
+
+model AudioPack {
+  id          String   @id @default(cuid())
+  packId      String   @unique @db.VarChar(100) // Unique identifier for the pack
+  type        AudioPackType // music, sfx, voice
+  scope       AudioScope    // lobby, in-game, join, bingo, countdown, numbers
+  locale      String?  @db.VarChar(10) // Language code for voice packs (e.g., 'en', 'es', 'fr')
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  isActive    Boolean  @default(true)
+  metadata    Json     @default("{}") // Pack-specific metadata (version, author, etc.)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  assets                 AudioAsset[]
+  lobbyMusicSettings     GameAudioSettings[] @relation("LobbyMusicPack")
+  inGameMusicSettings    GameAudioSettings[] @relation("InGameMusicPack")
+  sfxSettings            GameAudioSettings[] @relation("SfxPack")
+  voiceSettings          GameAudioSettings[] @relation("VoicePack")
+
+  @@index([type, scope])
+  @@index([locale])
+  @@index([isActive])
+  @@map("audio_packs")
+}
+
+enum AudioPackType {
+  MUSIC
+  SFX
+  VOICE
+}
+
+enum AudioScope {
+  LOBBY
+  IN_GAME
+  JOIN
+  BINGO
+  COUNTDOWN
+  NUMBERS
+}
+
+model AudioAsset {
+  id          String   @id @default(cuid())
+  audioPackId String
+  filename    String   @db.VarChar(255)
+  cueKey      String   @db.VarChar(100) // Key used to trigger this asset (e.g., 'lobby-start', 'number-B1')
+  duration    Float?   // Duration in seconds
+  fileSize    BigInt?  // File size in bytes
+  mimeType    String   @db.VarChar(50) // MIME type (audio/mpeg, audio/wav, etc.)
+  hash        String?  @db.VarChar(64) // SHA-256 hash for integrity verification
+  url         String?  @db.VarChar(500) // Optional CDN URL
+
+  createdAt   DateTime @default(now())
+
+  // Relations
+  audioPack   AudioPack @relation(fields: [audioPackId], references: [id], onDelete: Cascade)
+
+  @@unique([audioPackId, cueKey]) // One asset per cue key per pack
+  @@index([cueKey])
+  @@map("audio_assets")
+}
+
+model GameAudioSettings {
+  id                        String   @id @default(cuid())
+  gameId                    String   @unique
+  lobbyMusicPackId          String?
+  inGameMusicPackId         String?
+  sfxPackId                 String?
+  voicePackId               String?
+  countdownEnabled          Boolean  @default(true)
+  countdownDurationSeconds  Int      @default(10) // Countdown duration before number draw
+  countdownMessage          String?  @db.VarChar(200) // Optional custom countdown message
+  volumeSettings            Json     @default("{\"master\": 1.0, \"music\": 0.8, \"sfx\": 0.9, \"voice\": 1.0}")
+
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  // Relations
+  game                      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  lobbyMusicPack            AudioPack? @relation("LobbyMusicPack", fields: [lobbyMusicPackId], references: [id])
+  inGameMusicPack           AudioPack? @relation("InGameMusicPack", fields: [inGameMusicPackId], references: [id])
+  sfxPack                   AudioPack? @relation("SfxPack", fields: [sfxPackId], references: [id])
+  voicePack                 AudioPack? @relation("VoicePack", fields: [voicePackId], references: [id])
+
+  @@map("game_audio_settings")
 }
 
 // ================================

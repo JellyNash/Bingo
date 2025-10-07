@@ -40,12 +40,12 @@ export default async function claimRoute(fastify: FastifyInstance) {
     if (body.idempotencyKey) {
       const cached = await getIdempotentResponse(body.idempotencyKey);
       if (cached) {
-        reply.code(cached.statusCode).headers(cached.headers ?? {}).send(cached.body);
+        reply.status(cached.statusCode).headers(cached.headers ?? {}).send(cached.body);
         return;
       }
     }
 
-    await fastify.rateLimit.enforceClaim(request, reply);
+    await (fastify as any).enforceClaim(request, reply);
     if (reply.sent) return;
 
     const card = await prisma.bingoCard.findUnique({
@@ -55,24 +55,24 @@ export default async function claimRoute(fastify: FastifyInstance) {
       },
     });
     if (!card || !card.player) {
-      return reply.code(404).send({ error: 'card_not_found', message: 'Card not found' });
+      return reply.status(404).send({ error: 'card_not_found', message: 'Card not found' });
     }
 
     const user = request.user as { sub?: string };
     if (user.sub !== card.playerId) {
-      return reply.code(403).send({ error: 'forbidden', message: 'Cannot claim for another player' });
+      return reply.status(403).send({ error: 'forbidden', message: 'Cannot claim for another player' });
     }
 
     const { gameId } = card.player;
     if (!gameId) {
-      return reply.code(404).send({ error: 'game_not_found', message: 'Game not found' });
+      return reply.status(404).send({ error: 'game_not_found', message: 'Game not found' });
     }
 
     const player = await prisma.player.findUnique({ where: { id: card.playerId } });
-    if (!player) return reply.code(404).send({ error: 'player_not_found', message: 'Player not found' });
+    if (!player) return reply.status(404).send({ error: 'player_not_found', message: 'Player not found' });
 
     if (player.status === 'COOLDOWN' && player.cooldownUntil && player.cooldownUntil.getTime() > Date.now()) {
-      return reply.code(400).send({ error: 'cooldown', message: 'Player in cooldown due to penalty' });
+      return reply.status(400).send({ error: 'cooldown', message: 'Player in cooldown due to penalty' });
     }
 
     const claim = await prisma.claim.create({

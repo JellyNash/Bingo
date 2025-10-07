@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { generateGameSecrets, generateUniquePin } from '../utils/game.js';
 import { prisma } from '../services/prisma.js';
 import { mapGame } from '../utils/mappers.js';
+import { gameMasterSessionService } from '../services/gamemaster-session.js';
 
 const createGameBody = z.object({
   name: z.string().max(100).optional(),
@@ -14,12 +15,12 @@ const createGameBody = z.object({
 
 export default async function gamesCreate(fastify: FastifyInstance) {
   fastify.post('/games', {
-    preHandler: [fastify.authenticate, fastify.authorize('host')],
+    preHandler: [fastify.createGameMasterAuth()],
   }, async (request, reply) => {
     const body = createGameBody.parse(request.body ?? {});
 
     const pin = await generateUniquePin();
-    const requester = request.user as { sub?: string };
+    const requester = (request.user as any) as { sub?: string };
 
     // Transaction to ensure atomicity
     const game = await prisma.$transaction(async (tx) => {
@@ -48,6 +49,21 @@ export default async function gamesCreate(fastify: FastifyInstance) {
       });
     });
 
-    reply.code(201).send(mapGame(game));
+    // Read session cookie and bind game to session
+    const sessionId = request.cookies.gm_session ?? ((request.user as any)?.sub as string | undefined);
+    let tokens: { hostToken: string; screenToken: string } | undefined;
+
+    if (sessionId) {
+      try {
+        tokens = await gameMasterSessionService.bindGameToSession(sessionId, game.id, fastify);
+      } catch (error) {
+        request.log.warn({ error }, 'Failed to bind GameMaster session to game');
+      }
+    }
+
+    reply.status(201).send({
+      game: mapGame(game),
+      tokens,
+    });
   });
 }

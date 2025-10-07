@@ -13,6 +13,10 @@ import claimRoute from './cards.claim.js';
 import penaltyRoute from './penalties.apply.js';
 import snapshotRoute from './snapshot.get.js';
 import analyticsIngest from './analytics.ingest.js';
+import gameMasterAuth from './gamemaster-auth.js';
+import qrCodeRoute from './games.qrcode.js';
+import gameMasterAudioPacks from './gamemaster-audio-packs.js';
+import gamesAudioSettings from './games.audio-settings.js';
 
 const routesPlugin = fp(async (fastify: FastifyInstance) => {
   await fastify.register(gamesCreate);
@@ -28,6 +32,10 @@ const routesPlugin = fp(async (fastify: FastifyInstance) => {
   await fastify.register(penaltyRoute);
   await fastify.register(snapshotRoute);
   await fastify.register(analyticsIngest);
+  await fastify.register(gameMasterAuth);
+  await fastify.register(qrCodeRoute);
+  await fastify.register(gameMasterAudioPacks);
+  await fastify.register(gamesAudioSettings);
 });
 
 export default routesPlugin;

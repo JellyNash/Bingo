@@ -18,7 +18,7 @@ COPY tsconfig.json ./
 
 # Build the application
 WORKDIR /app/backend/api
-RUN pnpm build
+RUN pnpm add -D typescript && pnpm build
 
 # Runtime stage
 FROM node:20-alpine AS runtime

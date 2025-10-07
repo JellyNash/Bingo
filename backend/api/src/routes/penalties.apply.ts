@@ -14,14 +14,14 @@ const bodySchema = z.object({
 
 export default async function penaltyRoute(fastify: FastifyInstance) {
   fastify.post('/games/:gameId/penalty', {
-    preHandler: [fastify.authenticate, fastify.authorize('host')],
+    preHandler: [fastify.createGameMasterAuth()],
   }, async (request, reply) => {
     const { gameId } = z.object({ gameId: z.string().cuid() }).parse(request.params);
     const body = bodySchema.parse(request.body);
     const { playerId } = body;
 
     const player = await prisma.player.findUnique({ where: { id: playerId } });
-    if (!player) return reply.code(404).send({ error: 'player_not_found', message: 'Player not found' });
+    if (!player) return reply.status(404).send({ error: 'player_not_found', message: 'Player not found' });
 
     const expiresAt = body.durationMinutes ? new Date(Date.now() + body.durationMinutes * 60_000) : null;
     const user = request.user as { sub?: string } | undefined;
@@ -48,6 +48,6 @@ export default async function penaltyRoute(fastify: FastifyInstance) {
     });
 
     await publishGameState(gameId);
-    reply.code(201).send(mapPenalty(penalty));
+    reply.status(201).send(mapPenalty(penalty));
   });
 }

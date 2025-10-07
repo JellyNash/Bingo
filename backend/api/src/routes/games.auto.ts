@@ -13,13 +13,13 @@ const bodySchema = z.object({
 
 export default async function gamesAuto(fastify: FastifyInstance) {
   fastify.post('/games/:gameId/auto-draw', {
-    preHandler: [fastify.authenticate, fastify.authorize('host')],
+    preHandler: [fastify.createGameMasterAuth()],
   }, async (request, reply) => {
     const { gameId } = paramsSchema.parse(request.params);
     const body = bodySchema.parse(request.body);
 
     const game = await prisma.game.findUnique({ where: { id: gameId } });
-    if (!game) return reply.code(404).send({ error: 'not_found', message: 'Game not found' });
+    if (!game) return reply.status(404).send({ error: 'not_found', message: 'Game not found' });
 
     const intervalMs = body.intervalMs ?? game.autoDrawInterval * 1000;
 

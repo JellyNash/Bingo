@@ -149,7 +149,7 @@ export function standardPatterns(): Patterns {
       if (idx === 12) continue; // center free
       m |= 1 << idx;
     }
-    masks[`row${r + 1}`] = m;
+    masks[`ROW_${r + 1}`] = m;
   }
   // cols
   for (let c = 0; c < 5; c++) {
@@ -159,20 +159,21 @@ export function standardPatterns(): Patterns {
       if (idx === 12) continue;
       m |= 1 << idx;
     }
-    masks[`col${c + 1}`] = m;
+    masks[`COL_${c + 1}`] = m;
   }
   // diagonals
-  let d1 = 0, d2 = 0;
+  let d1 = 0;
+  let d2 = 0;
   for (let i = 0; i < 5; i++) {
     const idx1 = i * 5 + i;
     const idx2 = i * 5 + (4 - i);
     if (idx1 !== 12) d1 |= 1 << idx1;
     if (idx2 !== 12) d2 |= 1 << idx2;
   }
-  masks["diag1"] = d1;
-  masks["diag2"] = d2;
+  masks["DIAGONAL_1"] = d1;
+  masks["DIAGONAL_2"] = d2;
   // four corners (indexes: 0,4,20,24)
-  masks["fourCorners"] = (1 << 0) | (1 << 4) | (1 << 20) | (1 << 24);
+  masks["FOUR_CORNERS"] = (1 << 0) | (1 << 4) | (1 << 20) | (1 << 24);
   return masks;
 }
 

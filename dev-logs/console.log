@@ -1,0 +1,17 @@
+ 
+
+> @bingo/console@0.1.0 dev C:\Projects\Bingo\apps\console
+> vite
+
+Re-optimizing dependencies because vite config has changed
+
+  [32m[1mVITE[22m v5.4.20[39m  [2mready in [0m[1m290[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5174[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://192.168.1.108:[1m5174[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://172.26.144.1:[1m5174[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://172.20.240.1:[1m5174[22m/[39m
+[2m[32m  ➜[39m[22m[2m  press [22m[1mh + enter[22m[2m to show help[22m
+C:\Projects\Bingo\apps\console:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @bingo/console@0.1.0 dev: `vite`
+Exit status 3221225786

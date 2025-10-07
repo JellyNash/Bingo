@@ -1,0 +1,27 @@
+{
+  "packId": "default-lobby-music",
+  "name": "Default Lobby Music",
+  "description": "Default background music for game lobby",
+  "type": "MUSIC",
+  "scope": "LOBBY",
+  "version": "1.0.0",
+  "author": "Bingo Platform",
+  "metadata": {
+    "genre": "ambient",
+    "mood": "welcoming"
+  },
+  "assets": [
+    {
+      "filename": "lobby-welcome.mp3",
+      "cueKey": "lobby-start",
+      "duration": 3.5,
+      "mimeType": "audio/mpeg"
+    },
+    {
+      "filename": "lobby-background.mp3",
+      "cueKey": "lobby-loop",
+      "duration": 120.0,
+      "mimeType": "audio/mpeg"
+    }
+  ]
+}

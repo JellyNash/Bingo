@@ -1,7 +1,7 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { PrismaClient } from '@prisma/client';
 import crypto from 'node:crypto';
-import manifest from '../../../../analytics/schema/v1/manifest.json' assert { type: 'json' };
+import manifest from '../../../../analytics/schema/v1/manifest.json' with { type: 'json' };
 
 const prisma = new PrismaClient();
 
@@ -27,11 +27,10 @@ interface IngestBatch {
 
 export default async function analyticsIngest(app: FastifyInstance) {
   // Rate limiting for analytics endpoint
-  app.register(import('@fastify/rate-limit'), {
+  await app.register(import('@fastify/rate-limit'), {
     max: 60,
     timeWindow: '1 minute',
     hook: 'preHandler',
-    skipSuccessfulRequests: false,
     keyGenerator: (req: FastifyRequest) => {
       // Rate limit by IP address
       return req.ip;
@@ -99,7 +98,7 @@ export default async function analyticsIngest(app: FastifyInstance) {
   }, async (req: FastifyRequest<IngestBatch>, reply: FastifyReply) => {
     // Check if analytics is enabled
     if (process.env.ANALYTICS_ENABLED !== 'true') {
-      return reply.code(204).send();
+      return reply.status(204).send();
     }
 
     const events = req.body;
@@ -113,7 +112,7 @@ export default async function analyticsIngest(app: FastifyInstance) {
       
       if (!signature) {
         app.log.warn('Analytics request missing signature when HMAC key is configured');
-        return reply.code(401).send({ error: 'missing_signature' });
+        return reply.status(401).send({ error: 'missing_signature' });
       }
 
       try {
@@ -128,10 +127,10 @@ export default async function analyticsIngest(app: FastifyInstance) {
         
         if (!sigValid) {
           app.log.warn('Analytics request failed HMAC validation');
-          return reply.code(401).send({ error: 'bad_signature' });
+          return reply.status(401).send({ error: 'bad_signature' });
         }
       } catch (err) {
-        app.log.error('HMAC validation error:', err);
+        app.log.error('HMAC validation error:', err as any);
         sigValid = false;
       }
     }
@@ -166,7 +165,7 @@ export default async function analyticsIngest(app: FastifyInstance) {
     });
 
     if (filtered.length === 0) {
-      return reply.code(202).send({ accepted: 0, rejected: events.length });
+      return reply.status(202).send({ accepted: 0, rejected: events.length });
     }
 
     try {
@@ -184,8 +183,8 @@ export default async function analyticsIngest(app: FastifyInstance) {
           env: e.env ?? process.env.SERVICE_ENV ?? 'offline',
           traceId: e.traceId ?? null,
           dnt: e.dnt ?? false,
-          ctx: e.ctx ?? {},
-          props: e.props ?? {},
+          ctx: (e.ctx ?? {}) as any,
+          props: (e.props ?? {}) as any,
           sigValid
         })),
         skipDuplicates: true // Skip events with duplicate IDs (idempotency)
@@ -193,13 +192,13 @@ export default async function analyticsIngest(app: FastifyInstance) {
 
       app.log.info(`Analytics: accepted ${filtered.length} events`);
       
-      return reply.code(202).send({
+      return reply.status(202).send({
         accepted: filtered.length,
         rejected: events.length - filtered.length
       });
     } catch (err) {
-      app.log.error('Analytics ingestion error:', err);
-      throw app.httpErrors.internalServerError('Failed to ingest analytics events');
+      app.log.error('Analytics ingestion error:', err as any);
+      return reply.status(500).send({ error: 'Failed to ingest analytics events' });
     }
   });
 }

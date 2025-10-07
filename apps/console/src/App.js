@@ -1,148 +1,363 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
-import { useEffect, useState } from "react";
-import { connectConsole } from "./lib.socket";
-import { apiPost } from "./lib.api";
-const Bar = ({ show, text }) => show ? _jsx("div", { className: "fixed top-0 inset-x-0 text-center bg-yellow-500/20 text-yellow-200 py-1 text-sm", children: text }) : null;
-const Pill = ({ children }) => _jsx("span", { className: "px-2.5 py-1 rounded-full bg-white/10 border border-white/20 text-xs", children: children });
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { connectConsole } from './lib.socket';
+import { apiPost, apiSessionPost, bindGameMasterSession, fetchGameMasterSession, requestScreenLaunch, } from './lib.api';
+import { PinAuthForm } from './components/PinAuthForm';
+import { GameControls } from './components/GameControls/GameControls';
+import { PlayerRoster } from './components/PlayerRoster';
+import { SoundSettingsPanel } from './components/SoundSettings/SoundSettingsPanel';
+import { useAudioSettings } from './hooks/useAudioSettings';
+const Pill = ({ children }) => (_jsx("span", { className: "px-2.5 py-1 rounded-full bg-white/10 border border-white/20 text-xs", children: children }));
+function Bar({ show, text }) {
+    if (!show)
+        return null;
+    return (_jsx("div", { className: "fixed top-0 inset-x-0 text-center bg-yellow-500/20 text-yellow-200 py-1 text-sm", children: text }));
+}
 export default function App() {
-    const params = new URLSearchParams(location.search);
-    const token = params.get("token") ?? "";
-    const gameId = params.get("g") ?? "42";
+    const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
+    const gameIdFromUrl = urlParams.get('g');
+    const socketRef = useRef(null);
+    const [sessionLoaded, setSessionLoaded] = useState(false);
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [authError, setAuthError] = useState('');
+    const [token, setToken] = useState('');
+    const [screenToken, setScreenToken] = useState('');
+    const [gameId, setGameId] = useState(gameIdFromUrl ?? '');
+    const [gamePin, setGamePin] = useState('');
     const [connected, setConnected] = useState(false);
     const [numbers, setNumbers] = useState([]);
     const [claims, setClaims] = useState([]);
     const [players, setPlayers] = useState([]);
-    const [auto, setAuto] = useState(false);
-    const [intervalMs, setIntervalMs] = useState(5000);
+    const [autoDrawEnabled, setAutoDrawEnabled] = useState(false);
+    const [autoIntervalMs, setAutoIntervalMs] = useState(5000);
     const [busy, setBusy] = useState(false);
     const [log, setLog] = useState([]);
-    const [showCreateGame, setShowCreateGame] = useState(false);
-    const [isAuthorized, setIsAuthorized] = useState(false);
+    const [view, setView] = useState('dashboard');
+    const [countdownActive, setCountdownActive] = useState(false);
+    const [newPlayerJoined, setNewPlayerJoined] = useState(null);
+    const [lastInitializedGameId, setLastInitializedGameId] = useState('');
+    const pushLog = useCallback((line) => {
+        setLog((entries) => [new Date().toLocaleTimeString() + '  ' + line, ...entries].slice(0, 14));
+    }, []);
+    const audioSettings = useAudioSettings(gameId || null, {
+        onError: (message) => pushLog(`Audio settings error: ${message}`),
+    });
     useEffect(() => {
-        if (!token) {
-            pushLog("No auth token provided");
-            return;
-        }
-        // Parse JWT to check role (basic check, should validate server-side)
+        setNumbers([]);
+        setClaims([]);
+        setPlayers([]);
+    }, [gameId]);
+    const syncSession = useCallback(async () => {
         try {
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            const isAdmin = payload.role === 'admin' || payload.role === 'host';
-            setIsAuthorized(isAdmin);
-            if (!isAdmin) {
-                pushLog("Unauthorized: Admin/Host role required");
+            const session = await fetchGameMasterSession();
+            setIsAuthenticated(true);
+            setSessionLoaded(true);
+            if (session.currentGameId) {
+                setGameId(session.currentGameId);
+            }
+            if (session.hostToken) {
+                setToken(session.hostToken);
+            }
+            if (session.screenToken) {
+                setScreenToken(session.screenToken);
             }
         }
-        catch {
-            setIsAuthorized(false);
-            pushLog("Invalid token format");
+        catch (error) {
+            setIsAuthenticated(false);
+            setToken('');
+            setScreenToken('');
+            setSessionLoaded(true);
+            if (error?.message) {
+                pushLog(`Session sync failed: ${error.message}`);
+            }
         }
-        const s = connectConsole("/console", token);
-        s.on("connect", () => setConnected(true));
-        s.io.on("reconnect_attempt", () => setConnected(false));
-        s.io.on("reconnect", () => setConnected(true));
-        s.on("draw:next", ({ value }) => {
-            setNumbers((n) => [...n, value]);
+    }, [pushLog]);
+    useEffect(() => {
+        syncSession();
+    }, [syncSession]);
+    useEffect(() => {
+        if (!isAuthenticated || !sessionLoaded || !gameId) {
+            return;
+        }
+        if (gameId === lastInitializedGameId) {
+            return;
+        }
+        setLastInitializedGameId(gameId);
+        audioSettings.refreshPacks();
+        audioSettings.refreshSettings();
+    }, [audioSettings, gameId, isAuthenticated, lastInitializedGameId, sessionLoaded]);
+    useEffect(() => {
+        if (!isAuthenticated || !sessionLoaded) {
+            return;
+        }
+        if (gameIdFromUrl && !gameId) {
+            setGameId(gameIdFromUrl);
+        }
+        if (gameIdFromUrl && !token) {
+            bindGameMasterSession(gameIdFromUrl)
+                .then(({ hostToken, screenToken: newScreenToken }) => {
+                if (hostToken) {
+                    setToken(hostToken);
+                }
+                if (newScreenToken) {
+                    setScreenToken(newScreenToken);
+                }
+            })
+                .catch(() => {
+                pushLog(`Unable to bind session to game ${gameIdFromUrl}`);
+            });
+        }
+    }, [gameId, gameIdFromUrl, isAuthenticated, pushLog, sessionLoaded, token]);
+    useEffect(() => {
+        if (!token) {
+            return;
+        }
+        const socket = connectConsole('/console', token);
+        socketRef.current = socket;
+        socket.on('connect', () => {
+            setConnected(true);
+            pushLog('Connected to realtime server');
+        });
+        socket.on('disconnect', () => setConnected(false));
+        socket.io.on('reconnect_attempt', () => setConnected(false));
+        socket.io.on('reconnect', () => setConnected(true));
+        socket.on('draw:next', ({ value }) => {
+            setNumbers((prev) => [...prev, value]);
             pushLog(`Draw: ${value}`);
         });
-        s.on("claim:result", (payload) => {
-            // when server broadcasts resolved claims, show in a feed
-            pushLog(`Claim result: ${payload.nickname ?? "?"} • ${payload.result === 'approved' ? "APPROVED" : "DENIED"} (${payload.pattern ?? "-"})`);
-            // keep a short feed only
-            setClaims((c) => [{
+        socket.on('claim:result', (payload) => {
+            const outcome = payload.result ?? payload.status;
+            pushLog(`Claim result: ${payload.nickname ?? '?'} • ${outcome === 'approved' ? 'APPROVED' : 'DENIED'} (${payload.pattern ?? '-'})`);
+            setClaims((current) => [
+                {
                     claimId: payload.claimId,
                     nickname: payload.nickname,
                     pattern: payload.pattern,
-                    win: payload.result === 'approved'
-                }, ...c].slice(0, 6));
+                    win: outcome === 'approved',
+                },
+                ...current,
+            ].slice(0, 6));
         });
-        s.on("state:update", (payload) => {
-            if (payload.players) {
-                setPlayers(payload.players);
+        socket.on('state:update', (payload) => {
+            if (Array.isArray(payload.drawnNumbers)) {
+                setNumbers(payload.drawnNumbers);
+            }
+            if (Array.isArray(payload.players)) {
+                setPlayers(payload.players.map((player) => ({
+                    id: player.id,
+                    nickname: player.nickname,
+                    status: player.status,
+                    strikes: player.strikes ?? 0,
+                    joinedAt: player.joinedAt,
+                })));
+            }
+            if (typeof payload.pin === 'string') {
+                setGamePin(payload.pin);
+            }
+            if (typeof payload.playerCount === 'number') {
+                pushLog(`Players connected: ${payload.playerCount}`);
+            }
+            if (payload.audioSettings?.countdownEnabled !== undefined) {
+                setCountdownActive(Boolean(payload.countdownState?.active));
+            }
+            if (payload.countdownState?.active) {
+                setCountdownActive(true);
+            }
+            else {
+                setCountdownActive(false);
+            }
+            if (typeof payload.autoDrawEnabled === 'boolean') {
+                setAutoDrawEnabled(payload.autoDrawEnabled);
+            }
+            if (typeof payload.autoDrawIntervalMs === 'number') {
+                setAutoIntervalMs(payload.autoDrawIntervalMs);
             }
         });
+        socket.on('player:join', (payload) => {
+            const player = {
+                id: payload.player.id,
+                nickname: payload.player.nickname,
+                status: payload.player.status,
+                strikes: payload.player.strikes ?? 0,
+                joinedAt: payload.player.joinedAt,
+            };
+            setPlayers((current) => {
+                const others = current.filter((p) => p.id !== player.id);
+                return [...others, player];
+            });
+            setNewPlayerJoined(player);
+            pushLog(`${player.nickname} joined the game`);
+            setTimeout(() => setNewPlayerJoined(null), 3000);
+        });
+        socket.on('player:leave', (payload) => {
+            setPlayers((current) => current.filter((p) => p.id !== payload.playerId));
+            pushLog(`Player left: ${payload.playerId}`);
+        });
         return () => {
-            s.close();
+            socket.close();
+            socketRef.current = null;
         };
-    }, [token]);
-    function pushLog(line) {
-        setLog((l) => [new Date().toLocaleTimeString() + "  " + line, ...l].slice(0, 12));
-    }
-    async function drawNext() {
+    }, [pushLog, token]);
+    const handleAuthSuccess = useCallback(() => {
+        setAuthError('');
+        syncSession().catch(() => setIsAuthenticated(true));
+    }, [syncSession]);
+    const handleAuthError = useCallback((message) => {
+        setAuthError(message);
+        pushLog(`Auth error: ${message}`);
+    }, [pushLog]);
+    const handleCreateGame = useCallback(async () => {
         setBusy(true);
         try {
-            const r = await apiPost(`/games/${gameId}/draw`, token);
-            pushLog(`API draw -> ${r?.number ?? "?"}`);
+            const response = await apiSessionPost('/games', {
+                name: 'New Bingo Game',
+                winnerLimit: 3,
+                autoDrawEnabled: false,
+                autoDrawInterval: 5,
+            });
+            const createdGame = response.game;
+            const tokens = response.tokens;
+            if (!createdGame?.id) {
+                throw new Error('Invalid game response');
+            }
+            setGameId(createdGame.id);
+            if (tokens?.hostToken) {
+                setToken(tokens.hostToken);
+            }
+            if (tokens?.screenToken) {
+                setScreenToken(tokens.screenToken);
+            }
+            await apiSessionPost(`/games/${createdGame.id}/open`);
+            const newUrl = new URL(window.location.href);
+            newUrl.searchParams.set('g', createdGame.id);
+            window.history.replaceState({}, '', newUrl.toString());
+            pushLog(`Created game ${createdGame.id}`);
         }
-        catch (e) {
-            pushLog(`Draw failed: ${e.message}`);
+        catch (error) {
+            pushLog(`Create game failed: ${error?.message ?? 'unknown error'}`);
         }
         finally {
             setBusy(false);
         }
-    }
-    async function toggleAuto(next) {
+    }, [pushLog]);
+    const handleLaunchBigScreen = useCallback(async () => {
+        if (!gameId)
+            return;
         setBusy(true);
         try {
-            await apiPost(`/games/${gameId}/auto-draw`, token, { enabled: next, intervalMs });
-            setAuto(next);
-            pushLog(`Auto-draw ${next ? "ENABLED" : "DISABLED"} @ ${intervalMs}ms`);
+            const { hostToken: refreshedHostToken, screenToken: refreshedScreenToken, screenUrl } = await requestScreenLaunch(gameId);
+            if (refreshedHostToken) {
+                setToken(refreshedHostToken);
+            }
+            if (refreshedScreenToken) {
+                setScreenToken(refreshedScreenToken);
+            }
+            window.open(screenUrl, '_blank', 'noopener');
+            pushLog('Launched big screen');
         }
-        catch (e) {
-            pushLog(`Auto toggle failed: ${e.message}`);
+        catch (error) {
+            pushLog(`Could not launch big screen: ${error?.message ?? 'unknown error'}`);
         }
         finally {
             setBusy(false);
         }
-    }
-    async function pause() {
+    }, [gameId, pushLog]);
+    const handleDrawNext = useCallback(async () => {
+        if (!token || !gameId)
+            return;
+        setBusy(true);
+        try {
+            const response = await apiPost(`/games/${gameId}/draw`, token);
+            pushLog(`API draw -> ${response?.number ?? '?'}`);
+        }
+        catch (error) {
+            pushLog(`Draw failed: ${error?.message ?? 'unknown error'}`);
+        }
+        finally {
+            setBusy(false);
+        }
+    }, [gameId, pushLog, token]);
+    const handleToggleAuto = useCallback(async (next) => {
+        if (!token || !gameId)
+            return;
+        setBusy(true);
+        try {
+            await apiPost(`/games/${gameId}/auto-draw`, token, { enabled: next, intervalMs: autoIntervalMs });
+            setAutoDrawEnabled(next);
+            pushLog(`Auto-draw ${next ? 'ENABLED' : 'DISABLED'} @ ${autoIntervalMs}ms`);
+        }
+        catch (error) {
+            pushLog(`Auto toggle failed: ${error?.message ?? 'unknown error'}`);
+        }
+        finally {
+            setBusy(false);
+        }
+    }, [autoIntervalMs, gameId, pushLog, token]);
+    const handlePause = useCallback(async () => {
+        if (!token || !gameId)
+            return;
         setBusy(true);
         try {
             await apiPost(`/games/${gameId}/pause`, token);
-            pushLog(`Paused`);
+            pushLog('Game paused');
         }
-        catch (e) {
-            pushLog(`Pause failed: ${e.message}`);
-        }
-        finally {
-            setBusy(false);
-        }
-    }
-    async function createGame() {
-        setBusy(true);
-        try {
-            const gameData = await apiPost(`/games`, token, {
-                name: "New Bingo Game",
-                winnerLimit: 3,
-                autoDrawEnabled: false,
-                autoDrawInterval: 5
-            });
-            const openData = await apiPost(`/games/${gameData.id}/open`, token);
-            pushLog(`Created game: ${gameData.id}`);
-            window.location.search = `?g=${gameData.id}&token=${token}`;
-        }
-        catch (e) {
-            pushLog(`Create game failed: ${e.message}`);
+        catch (error) {
+            pushLog(`Pause failed: ${error?.message ?? 'unknown error'}`);
         }
         finally {
             setBusy(false);
         }
-    }
-    async function applyPenalty(playerId) {
+    }, [gameId, pushLog, token]);
+    const handlePenalty = useCallback(async (playerId) => {
+        if (!token || !gameId)
+            return;
         setBusy(true);
         try {
-            await apiPost(`/games/${gameId}/penalty`, token, { playerId, reason: "Manual penalty" });
+            await apiPost(`/games/${gameId}/penalty`, token, { playerId, reason: 'Manual penalty' });
             pushLog(`Penalty applied to ${playerId}`);
         }
-        catch (e) {
-            pushLog(`Penalty failed: ${e.message}`);
+        catch (error) {
+            pushLog(`Penalty failed: ${error?.message ?? 'unknown error'}`);
         }
         finally {
             setBusy(false);
         }
+    }, [gameId, pushLog, token]);
+    const handleStartCountdown = useCallback(async () => {
+        if (!gameId)
+            return;
+        setBusy(true);
+        try {
+            await apiSessionPost(`/games/${gameId}/open`, { startCountdown: true });
+            pushLog('Countdown started');
+            setCountdownActive(true);
+        }
+        catch (error) {
+            pushLog(`Countdown failed: ${error?.message ?? 'unknown error'}`);
+        }
+        finally {
+            setBusy(false);
+        }
+    }, [gameId, pushLog]);
+    const handleIntervalChange = useCallback((value) => {
+        setAutoIntervalMs(value);
+        if (autoDrawEnabled && token && gameId) {
+            apiPost(`/games/${gameId}/auto-draw`, token, { enabled: true, intervalMs: value })
+                .then(() => pushLog(`Auto-draw interval updated to ${value}ms`))
+                .catch((error) => pushLog(`Failed to update interval: ${error?.message ?? 'unknown error'}`));
+        }
+    }, [autoDrawEnabled, gameId, pushLog, token]);
+    const dashboard = (_jsxs("div", { className: "grid lg:grid-cols-3 gap-6", children: [_jsx(GameControls, { busy: busy, connected: connected, gameId: gameId, gamePin: gamePin, autoDrawEnabled: autoDrawEnabled, autoIntervalMs: autoIntervalMs, onNewGame: handleCreateGame, onDrawNext: handleDrawNext, onToggleAuto: handleToggleAuto, onIntervalChange: handleIntervalChange, onPause: handlePause, onLaunchScreen: handleLaunchBigScreen, onStartCountdown: handleStartCountdown, countdownActive: countdownActive, countdownEnabled: audioSettings.countdown.enabled }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3 lg:col-span-2", children: [_jsx("header", { children: _jsx("div", { className: "text-sm text-white/70", children: "Recent Draws" }) }), _jsxs("div", { className: "grid grid-cols-6 gap-2", children: [numbers.slice(-24).reverse().map((n, index) => (_jsx("div", { className: "h-12 rounded-xl grid place-items-center bg-white/10 border border-white/10 text-white font-medium", children: labelNumber(n) }, `${n}-${index}`))), numbers.length === 0 && (_jsx("div", { className: "text-sm text-white/60 col-span-6 text-center py-6", children: "No numbers drawn yet." }))] })] }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3", children: [_jsx("header", { children: _jsx("div", { className: "text-sm text-white/70", children: "Recent Claims" }) }), _jsxs("div", { className: "space-y-2", children: [claims.map((claim, index) => (_jsxs("div", { className: "p-3 rounded-xl bg-white/10 border border-white/10", children: [_jsx("div", { className: "text-sm text-white font-medium", children: claim.nickname ?? 'Player' }), _jsx("div", { className: "text-xs text-white/50", children: claim.pattern ?? '-' }), _jsx("div", { className: `text-xs mt-1 ${claim.win ? 'text-emerald-300' : 'text-red-300'}`, children: claim.win ? 'APPROVED' : 'DENIED' })] }, index))), claims.length === 0 && (_jsx("div", { className: "p-4 text-sm text-white/60 bg-white/5 border border-white/10 rounded-xl text-center", children: "No claims yet." }))] })] }), _jsx(PlayerRoster, { players: players, onPenalty: handlePenalty, busy: busy }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4 lg:col-span-3", children: [_jsx("header", { className: "text-sm text-white/70 mb-3", children: "Recent Activity" }), _jsx("div", { className: "text-xs text-white/70 whitespace-pre-wrap max-h-48 overflow-auto", children: log.join('\n') })] })] }));
+    if (!sessionLoaded) {
+        return (_jsx("div", { className: "min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center", children: _jsx("div", { className: "text-white", children: "Loading\u2026" }) }));
     }
-    return (_jsxs("div", { className: "min-h-full p-6", children: [_jsx(Bar, { show: !connected, text: "Reconnecting\u2026" }), _jsxs("header", { className: "flex items-center justify-between", children: [_jsx("div", { className: "text-lg font-semibold", children: "GameMaster Console" }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsxs(Pill, { children: ["Game #", gameId] }), _jsx(Pill, { children: connected ? "Connected" : "Offline" })] })] }), !isAuthorized && (_jsxs("div", { className: "mt-6 p-6 rounded-2xl border border-feedback-danger/40 bg-feedback-danger/10", children: [_jsx("div", { className: "text-feedback-danger font-semibold mb-2", children: "Authorization Required" }), _jsx("div", { className: "text-sm opacity-80", children: "You need admin or host role to access console controls." })] })), showCreateGame && (_jsx("div", { className: "fixed inset-0 bg-black/80 grid place-items-center p-6 z-50", children: _jsxs("div", { className: "bg-surface-raised p-6 rounded-2xl border border-border-subtle max-w-md w-full", children: [_jsx("h2", { className: "text-lg font-semibold mb-4", children: "Create New Game" }), _jsx("button", { onClick: createGame, disabled: busy, className: "w-full px-4 py-2 rounded-xl bg-brand-primary hover:bg-brand-primary-accent", children: "Create and Open Game" }), _jsx("button", { onClick: () => setShowCreateGame(false), className: "w-full mt-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15", children: "Cancel" })] }) })), _jsxs("div", { className: "mt-6 grid lg:grid-cols-3 gap-6", children: [_jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70", children: "Controls" }), _jsxs("div", { className: "mt-3 flex flex-wrap gap-2", children: [_jsx("button", { onClick: () => setShowCreateGame(true), disabled: busy || !isAuthorized, className: "px-4 py-2 rounded-xl bg-brand-primary/20 hover:bg-brand-primary/30 border border-brand-primary/40", children: "New Game" }), _jsx("button", { onClick: drawNext, disabled: busy || !connected || !isAuthorized, className: "px-4 py-2 rounded-xl bg-accent/20 hover:bg-accent/30 border border-accent/40", children: "Draw Next" }), _jsx("button", { onClick: () => toggleAuto(!auto), disabled: busy || !connected || !isAuthorized, className: "px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20", children: auto ? "Disable Auto-Draw" : "Enable Auto-Draw" }), _jsx("button", { onClick: pause, disabled: busy || !connected || !isAuthorized, className: "px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/20", children: "Pause" })] }), _jsxs("div", { className: "mt-4", children: [_jsx("label", { className: "text-sm opacity-70", children: "Auto interval (ms)" }), _jsx("input", { type: "range", min: 2000, max: 10000, step: 250, value: intervalMs, onChange: (e) => setIntervalMs(+e.target.value), className: "w-full" }), _jsxs("div", { className: "text-sm opacity-70 mt-1", children: [intervalMs, " ms"] })] })] }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Recent Draws" }), _jsx("div", { className: "grid grid-cols-6 gap-2", children: numbers.slice(-24).reverse().map((n, i) => (_jsx("div", { className: "h-12 rounded-xl grid place-items-center bg-card border border-white/10", children: _jsx("div", { className: "font-semibold", children: label(n) }) }, i))) })] }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Claims (latest)" }), _jsxs("ul", { className: "space-y-2", children: [claims.map((c, i) => (_jsxs("li", { className: "p-3 rounded-xl bg-card border border-white/10", children: [_jsxs("div", { className: "text-sm", children: [c.nickname ?? "Player", " \u2022 ", c.pattern ?? "-"] }), _jsx("div", { className: `text-xs ${c.win ? "text-emerald-300" : "text-red-300"}`, children: c.win ? "APPROVED" : "DENIED" })] }, i))), !claims.length && _jsx("div", { className: "text-sm opacity-50", children: "No claims yet" })] })] }), _jsxs("section", { className: "rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Players" }), _jsxs("ul", { className: "space-y-2", children: [players.slice(0, 10).map((p, i) => (_jsxs("li", { className: "p-2 rounded-xl bg-card border border-white/10 flex justify-between items-center", children: [_jsxs("div", { children: [_jsx("div", { className: "text-sm", children: p.nickname }), _jsxs("div", { className: "text-xs opacity-60", children: ["Strikes: ", p.strikes, " \u2022 ", p.status] })] }), _jsx("button", { onClick: () => applyPenalty(p.playerId), disabled: busy || !isAuthorized, className: "px-2 py-1 text-xs rounded bg-feedback-danger/20 hover:bg-feedback-danger/30", children: "Penalty" })] }, i))), !players.length && _jsx("div", { className: "text-sm opacity-50", children: "No players yet" })] })] })] }), _jsxs("section", { className: "mt-6 rounded-2xl border border-white/10 bg-white/5 p-4", children: [_jsx("div", { className: "text-sm opacity-70 mb-3", children: "Recent Activity" }), _jsx("pre", { className: "text-xs whitespace-pre-wrap opacity-80", children: log.join("\n") })] }), _jsxs("footer", { className: "mt-6 text-xs opacity-60", children: ["Open with: ", _jsx("kbd", { children: "?g=42&token=<JWT>" })] })] }));
+    if (!isAuthenticated) {
+        return _jsx(PinAuthForm, { onSuccess: handleAuthSuccess, onError: handleAuthError });
+    }
+    return (_jsxs("div", { className: "min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white", children: [_jsx(Bar, { show: !connected, text: "Reconnecting\u2026" }), authError && (_jsx("div", { className: "fixed top-10 inset-x-0 mx-auto max-w-lg px-4", children: _jsx("div", { className: "p-3 rounded-xl bg-red-500/20 border border-red-500/40 text-sm text-red-200 text-center", children: authError }) })), _jsxs("main", { className: "max-w-6xl mx-auto px-6 py-8 space-y-6", children: [_jsxs("header", { className: "flex flex-wrap items-center justify-between gap-4", children: [_jsxs("div", { className: "flex items-center gap-4", children: [_jsx("h1", { className: "text-xl font-semibold", children: "GameMaster Console" }), _jsxs("nav", { className: "flex gap-2", children: [_jsx("button", { onClick: () => setView('dashboard'), className: `px-3 py-1 rounded-lg text-sm transition ${view === 'dashboard' ? 'bg-brand-primary/20 text-brand-primary border border-brand-primary/30' : 'bg-white/10 hover:bg-white/20 border border-white/10'}`, children: "Dashboard" }), _jsx("button", { onClick: () => setView('sound-settings'), className: `px-3 py-1 rounded-lg text-sm transition ${view === 'sound-settings' ? 'bg-brand-primary/20 text-brand-primary border border-brand-primary/30' : 'bg-white/10 hover:bg-white/20 border border-white/10'}`, children: "Sound Settings" })] })] }), _jsxs("div", { className: "flex items-center gap-2", children: [_jsxs(Pill, { children: ["Game ID: ", gameId || '—'] }), _jsxs(Pill, { children: ["PIN: ", gamePin || '—'] }), _jsx(Pill, { children: connected ? 'Connected' : 'Offline' })] })] }), view === 'dashboard' ? (dashboard) : (_jsx(SoundSettingsPanel, { loading: audioSettings.loading, error: audioSettings.error, musicPacks: audioSettings.musicPacks, sfxPacks: audioSettings.sfxPacks, voicePacks: audioSettings.voicePacks, currentMusic: audioSettings.currentMusic, currentSfx: audioSettings.currentSfx, currentVoice: audioSettings.currentVoice, countdown: audioSettings.countdown, uploadProgress: audioSettings.uploadProgress, onSelectMusic: audioSettings.selectMusicPack, onSelectSfx: audioSettings.selectSfxPack, onSelectVoice: audioSettings.selectVoicePack, onToggleCountdown: audioSettings.setCountdownEnabled, onCountdownDuration: audioSettings.setCountdownDuration, onCountdownMessage: audioSettings.setCountdownMessage, onUploadPack: audioSettings.uploadPack }))] }), _jsx(AnimatePresence, { children: newPlayerJoined && (_jsx(motion.div, { initial: { y: -80, opacity: 0 }, animate: { y: 0, opacity: 1 }, exit: { y: -80, opacity: 0 }, className: "fixed top-0 inset-x-0 flex justify-center pt-8", children: _jsxs("div", { className: "px-6 py-3 rounded-2xl bg-emerald-500/90 text-white shadow-2xl border border-emerald-300/70", children: ["\uD83C\uDF89 ", newPlayerJoined.nickname, " joined the game!"] }) })) })] }));
 }
-function label(n) {
+function labelNumber(n) {
     if (n <= 15)
         return `B${n}`;
     if (n <= 30)

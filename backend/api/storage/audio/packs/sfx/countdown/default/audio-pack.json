@@ -1,0 +1,33 @@
+{
+  "packId": "default-countdown-sfx",
+  "name": "Default Countdown Sound Effects",
+  "description": "Sound effects for countdown sequences",
+  "type": "SFX",
+  "scope": "COUNTDOWN",
+  "version": "1.0.0",
+  "author": "Bingo Platform",
+  "metadata": {
+    "style": "digital",
+    "intensity": "high"
+  },
+  "assets": [
+    {
+      "filename": "countdown-tick.wav",
+      "cueKey": "countdown-tick",
+      "duration": 1.0,
+      "mimeType": "audio/wav"
+    },
+    {
+      "filename": "countdown-final.wav",
+      "cueKey": "countdown-final",
+      "duration": 2.0,
+      "mimeType": "audio/wav"
+    },
+    {
+      "filename": "countdown-complete.wav",
+      "cueKey": "countdown-complete",
+      "duration": 3.0,
+      "mimeType": "audio/wav"
+    }
+  ]
+}

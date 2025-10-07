@@ -9,13 +9,13 @@ const paramsSchema = z.object({ gameId: z.string().cuid() });
 
 export default async function gamesPause(fastify: FastifyInstance) {
   fastify.post('/games/:gameId/pause', {
-    preHandler: [fastify.authenticate, fastify.authorize('host')],
+    preHandler: [fastify.createGameMasterAuth()],
   }, async (request, reply) => {
     const { gameId } = paramsSchema.parse(request.params);
     const game = await prisma.game.findUnique({ where: { id: gameId } });
-    if (!game) return reply.code(404).send({ error: 'not_found', message: 'Game not found' });
+    if (!game) return reply.status(404).send({ error: 'not_found', message: 'Game not found' });
     if (game.status !== 'ACTIVE') {
-      return reply.code(400).send({ error: 'invalid_state', message: 'Game is not active' });
+      return reply.status(400).send({ error: 'invalid_state', message: 'Game is not active' });
     }
 
     const updated = await prisma.game.update({

@@ -11,37 +11,10 @@ const paramsSchema = z.object({
 });
 
 const bodySchema = z.object({
-  position: z.string().regex(/^(FREE|[BINGO][0-9]{1,2})$/),
+  position: z.number().int().min(0).max(24),
   marked: z.boolean(),
   idempotencyKey: z.string().max(128).optional(),
 });
-
-function resolveTarget(position: string) {
-  if (position === 'FREE') {
-    return { letter: 'FREE', number: 0, key: 'FREE' as const };
-  }
-
-  const letter = position[0] as 'B' | 'I' | 'N' | 'G' | 'O';
-  const value = Number.parseInt(position.slice(1), 10);
-  if (Number.isNaN(value)) {
-    throw new Error('invalid_position');
-  }
-
-  const ranges: Record<typeof letter, [number, number]> = {
-    B: [1, 15],
-    I: [16, 30],
-    N: [31, 45],
-    G: [46, 60],
-    O: [61, 75],
-  };
-
-  const [min, max] = ranges[letter];
-  if (value < min || value > max) {
-    throw new Error('invalid_position');
-  }
-
-  return { letter, number: value, key: String(value) };
-}
 
 export default async function markRoute(fastify: FastifyInstance) {
   fastify.post('/cards/:cardId/mark', {
@@ -53,12 +26,12 @@ export default async function markRoute(fastify: FastifyInstance) {
     if (body.idempotencyKey) {
       const cached = await getIdempotentResponse(body.idempotencyKey);
       if (cached) {
-        reply.code(cached.statusCode).headers(cached.headers ?? {}).send(cached.body);
+        reply.status(cached.statusCode).headers(cached.headers ?? {}).send(cached.body);
         return;
       }
     }
 
-    await fastify.rateLimit.enforceMark(request, reply);
+    await ((fastify as any).enforceMark)(request, reply);
     if (reply.sent) return;
 
     const card = await prisma.bingoCard.findUnique({
@@ -66,55 +39,53 @@ export default async function markRoute(fastify: FastifyInstance) {
       include: { player: { select: { id: true, gameId: true, nickname: true } } },
     });
     if (!card || !card.player || !card.player.gameId) {
-      return reply.code(404).send({ error: 'card_not_found', message: 'Card or game not found' });
+      return reply.status(404).send({ error: 'card_not_found', message: 'Card or game not found' });
     }
 
     const user = request.user as { sub?: string };
     if (user.sub !== card.playerId) {
-      return reply.code(403).send({ error: 'forbidden', message: 'Cannot mark on another card' });
+      return reply.status(403).send({ error: 'forbidden', message: 'Cannot mark on another card' });
     }
 
     const gameId = card.player.gameId;
 
-    let target;
-    try {
-      target = resolveTarget(body.position);
-    } catch (error) {
-      return reply.code(400).send({ error: 'invalid_position', message: 'Position is not valid for bingo card' });
-    }
-
     const marks = { ...((card.marks as unknown as Record<string, boolean>) ?? {}) };
-    if (!marks.FREE) marks.FREE = true;
+    marks['12'] = true;
 
     const grid = card.numbers as number[][];
+    const position = body.position;
+    const rowIndex = Math.floor(position / 5);
+    const colIndex = position % 5;
+
+    if (rowIndex < 0 || rowIndex >= grid.length || colIndex < 0 || colIndex >= grid[rowIndex].length) {
+      return reply.status(400).send({ error: 'invalid_position', message: 'Position is not valid for bingo card' });
+    }
+
+    const cellNumber = grid[rowIndex][colIndex];
+
     const draws = await prisma.draw.findMany({ where: { gameId }, orderBy: { sequence: 'asc' } });
     const drawnNumbers = new Set<number>(draws.map((d: { number: number }) => d.number));
 
-    if (target.letter !== 'FREE') {
-      const colMap = { B: 0, I: 1, N: 2, G: 3, O: 4 } as const;
-      const columnIndex = colMap[target.letter as keyof typeof colMap];
-      const existsInColumn = grid.some((row) => row[columnIndex] === target.number);
-      if (!existsInColumn) {
-        return reply.code(400).send({ error: 'invalid_position', message: 'Position does not belong to this card' });
+    if (position !== 12) {
+      if (cellNumber === 0) {
+        return reply.status(400).send({ error: 'invalid_position', message: 'Position does not belong to this card' });
       }
 
-      if (body.marked && !drawnNumbers.has(target.number)) {
-        return reply.code(400).send({ error: 'number_not_drawn', message: 'Number has not been drawn yet' });
+      if (body.marked && !drawnNumbers.has(cellNumber)) {
+        return reply.status(400).send({ error: 'number_not_drawn', message: 'Number has not been drawn yet' });
       }
 
       if (body.marked) {
-        marks[target.key] = true;
+        marks[String(position)] = true;
       } else {
-        delete marks[target.key];
+        delete marks[String(position)];
       }
     } else {
-      marks.FREE = true;
+      marks['12'] = true;
     }
 
-    const drawnWithFree = new Set(drawnNumbers);
-    drawnWithFree.add(0);
     const cardWithMarks = { ...card, marks } as unknown as BingoCardModel;
-    const eligible = eligiblePatterns(cardWithMarks, drawnWithFree);
+    const eligible = eligiblePatterns(cardWithMarks, drawnNumbers);
 
     await prisma.bingoCard.update({
       where: { id: cardId },

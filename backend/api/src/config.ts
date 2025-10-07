@@ -1,4 +1,8 @@
-import 'dotenv/config';
+import { config as dotenvConfig } from 'dotenv';
+
+// Load environment variables from .env.local first, then .env
+dotenvConfig({ path: '.env.local' });
+dotenvConfig({ path: '.env' });
 
 const required = ['DATABASE_URL', 'REDIS_URL', 'JWT_SECRET', 'GAME_SEED_SECRET'];
 
@@ -25,6 +29,13 @@ export const config = {
   penaltyCooldownMs: Number(process.env.PENALTY_COOLDOWN_MS ?? 30_000),
   rlLockoutMs: Number(process.env.RL_LOCKOUT_MS ?? 120_000),
   eventChannel: process.env.EVENT_CHANNEL ?? 'bingo:events',
+  // App URLs for different clients (matching Vite dev server ports)
+  playerAppUrl: process.env.PLAYER_APP_URL ?? 'http://localhost:5175',
+  screenAppUrl: process.env.SCREEN_APP_URL ?? 'http://localhost:5173',
+  consoleAppUrl: process.env.CONSOLE_APP_URL ?? 'http://localhost:5174',
+  // GameMaster authentication
+  gameMasterPin: process.env.GAMEMASTER_PIN ?? '123456',
+  cookieSecret: process.env.COOKIE_SECRET ?? 'dev_only_replace_me',
 };
 
 export type AppConfig = typeof config;

@@ -7,7 +7,7 @@ services:
       - "5432:5432"
     environment:
       POSTGRES_USER: bingo
-      POSTGRES_PASSWORD: dev_password
+      POSTGRES_PASSWORD: bingo
       POSTGRES_DB: bingo
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -36,7 +36,7 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3000
-      DATABASE_URL: postgresql://bingo:dev_password@postgres:5432/bingo
+      DATABASE_URL: postgresql://bingo:bingo@postgres:5432/bingo
       REDIS_URL: redis://redis:6379
       JWT_SECRET: dev_jwt_secret
       GAME_SEED_SECRET: dev_game_secret

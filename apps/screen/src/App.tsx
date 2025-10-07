@@ -1,268 +1,326 @@
-import { motion, AnimatePresence } from "framer-motion";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { connectSocket } from "./lib.socket";
-import { WebAudioEngine } from "./media/engine";
-import { attachMediaController } from "./media/controller";
-import { useAudioUnlock, AudioUnlockOverlay } from "./media/unlock";
-import { useIntroVideo } from "./media/video";
-import { MediaControls } from "./components/MediaControls";
+import { BigScreenDisplay } from "./components/BigScreenDisplay";
+import { establishScreenSession, getGameQRCode, getUrlParams, cleanUrlParams } from "./lib/api";
+import { getAudioController } from "./audio/engine";
+import { Player } from "./types/realtime";
 
-function useQuery() {
-  return new URLSearchParams(window.location.search);
+interface GameState {
+  gameId: string;
+  pin: string;
+  status: 'waiting' | 'countdown' | 'active' | 'paused' | 'completed';
+  currentNumber?: number;
+  drawnNumbers: number[];
+  players: Player[];
+  playerCount: number;
+  countdownState?: {
+    active: boolean;
+    startedAt?: number;
+    durationSeconds: number;
+    message?: string;
+  };
 }
 
-const Background = () => (
-  <div className="absolute inset-0 -z-10 overflow-hidden">
-    <div className="absolute inset-0 opacity-20"
-         style={{ background: "radial-gradient(circle at 20% 20%, #22d3ee 0%, transparent 40%), radial-gradient(circle at 80% 30%, #a78bfa 0%, transparent 35%)" }} />
-    <motion.div
-      className="absolute inset-0"
-      animate={{ backgroundPosition: ["0% 0%", "100% 100%"] }}
-      transition={{ repeat: Infinity, duration: 40, ease: "linear" }}
-      style={{ backgroundImage: "repeating-linear-gradient(45deg, rgba(255,255,255,0.06) 0 10px, transparent 10px 20px)" }}
-    />
-  </div>
-);
-
-const CurrentNumber: React.FC<{ value?: number }> = ({ value }) => (
-  <motion.div
-    key={value ?? "blank"}
-    initial={{ scale: 0.6, opacity: 0 }}
-    animate={{ scale: 1, opacity: 1 }}
-    exit={{ scale: 0.8, opacity: 0 }}
-    transition={{ type: "spring", stiffness: 200, damping: 20 }}
-    className="text-center"
-  >
-    <div className="text-8xl md:text-9xl font-black tracking-wider drop-shadow-[0_0_30px_rgba(94,234,212,0.35)]">
-      {value ? letterFor(value) + " " + value : "—"}
-    </div>
-    <div className="mt-2 text-accent/80">Now Drawing</div>
-  </motion.div>
-);
-
-function letterFor(n: number) {
-  if (n <= 15) return "B";
-  if (n <= 30) return "I";
-  if (n <= 45) return "N";
-  if (n <= 60) return "G";
-  return "O";
+function mapStatus(status?: string): GameState['status'] {
+  switch (status) {
+    case 'COUNTDOWN':
+      return 'countdown';
+    case 'ACTIVE':
+      return 'active';
+    case 'PAUSED':
+      return 'paused';
+    case 'COMPLETED':
+      return 'completed';
+    default:
+      return 'waiting';
+  }
 }
 
-const RecentStrip: React.FC<{ recent: number[] }> = ({ recent }) => (
-  <div className="mt-8 flex justify-center gap-2 flex-wrap max-w-5xl mx-auto">
-    {recent.slice(-12).reverse().map((n) => (
-      <motion.div
-        key={n + "-" + Math.random()}
-        initial={{ y: 10, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className="w-14 h-14 rounded-2xl grid place-items-center bg-white/5 border border-white/10 backdrop-blur"
-      >
-        <div className="text-2xl font-semibold">{letterFor(n)}{n}</div>
-      </motion.div>
-    ))}
-  </div>
-);
-
-const WinnerBanner: React.FC<{ show: boolean; payload?: any; onHide: () => void }> = ({ show, payload, onHide }) => (
-  <AnimatePresence>
-    {show && (
-      <motion.div
-        className="fixed inset-0 grid place-items-center bg-black/50 backdrop-blur-sm"
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        onClick={onHide}
-      >
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.9, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 200, damping: 18 }}
-          className="px-10 py-8 rounded-3xl bg-white/10 border border-white/20 text-center"
-        >
-          <div className="text-6xl font-extrabold text-accent drop-shadow">BINGO!</div>
-          <div className="mt-3 text-xl opacity-90">
-            {payload?.nickname ? `Winner: ${payload.nickname}` : "Winner detected"}
-          </div>
-          {payload?.pattern && <div className="mt-1 opacity-70">Pattern: {payload.pattern}</div>}
-          <div className="mt-4 text-sm opacity-60">(click to dismiss)</div>
-        </motion.div>
-      </motion.div>
-    )}
-  </AnimatePresence>
-);
-
-const ReconnectingBar: React.FC<{ show: boolean }> = ({ show }) =>
-  show ? (
-    <div className="fixed top-0 inset-x-0 text-center bg-yellow-500/20 text-yellow-200 py-1 text-sm">Reconnecting…</div>
-  ) : null;
+function normalizePlayer(data: any): Player {
+  return {
+    id: data?.id ?? data?.playerId ?? '',
+    nickname: data?.nickname ?? 'Player',
+    status: data?.status ?? 'ACTIVE',
+    strikes: typeof data?.strikes === 'number' ? data.strikes : 0,
+    joinedAt: data?.joinedAt ?? new Date().toISOString(),
+    avatar: data?.avatar ?? null,
+  };
+}
 
 export default function App() {
-  const q = useQuery();
-  const gameId = q.get("g") ?? "42";
-  const token = q.get("token") ?? "";
   const [connected, setConnected] = useState(false);
-  const [current, setCurrent] = useState<number | undefined>(undefined);
-  const [recent, setRecent] = useState<number[]>([]);
-  const [win, setWin] = useState<any | undefined>();
-  const [showWin, setShowWin] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [gameState, setGameState] = useState<GameState>({
+    gameId: '',
+    pin: '',
+    status: 'waiting',
+    drawnNumbers: [],
+    players: [],
+    playerCount: 0
+  });
+  const [qrCode, setQrCode] = useState<string>('');
+  const [token, setToken] = useState<string>('');
+  const [newPlayerJoined, setNewPlayerJoined] = useState<Player | null>(null);
+  const audioController = useRef(getAudioController());
 
-  // Media system
-  const [mediaEngine, setMediaEngine] = useState<WebAudioEngine | null>(null);
-  const [currentPack, setCurrentPack] = useState("/media-packs/placeholder/pack.json");
-  const audioUnlock = useAudioUnlock(mediaEngine?.getContext());
-  const { IntroVideoComponent, playIntro } = useIntroVideo();
-  const mediaControllerCleanup = useRef<(() => void) | null>(null);
-
-  // Available media packs
-  const mediaPacks = [
-    { url: "/media-packs/placeholder/pack.json", name: "Placeholder (Test)" },
-    { url: "/media-packs/english-female/pack.json", name: "English (Female)" }
-  ];
-
-  // Initialize media engine
+  // Initialize screen and establish session
   useEffect(() => {
-    const engine = new WebAudioEngine();
-    setMediaEngine(engine);
+    const initScreen = async () => {
+      try {
+        const params = getUrlParams();
+        const launchToken = params.get('launch');
 
-    // Load saved volumes
-    engine.loadSavedVolumes();
+        if (!launchToken) {
+          throw new Error('No launch token provided. This screen must be launched from the console.');
+        }
 
-    // Set initial pack
-    engine.setPack(currentPack).then(() => {
-      console.log("Media pack loaded:", currentPack);
-    }).catch((err) => {
-      console.error("Failed to load media pack:", err);
-    });
+        // Establish session with backend
+        const session = await establishScreenSession(launchToken);
+        setToken(session.token);
 
-    // Setup video callback
-    engine.setVideoCallback(() => playIntro());
+        // Update game state with initial data
+        setGameState(prev => ({
+          ...prev,
+          gameId: session.gameId,
+        }));
 
-    // Expose for dev testing
-    if (import.meta.env.DEV) {
-      (window as any).mediaEngine = engine;
-      (window as any).playIntro = playIntro;
-    }
+        // Clean URL to remove sensitive token
+        cleanUrlParams(['launch']);
 
-    return () => {
-      // Cleanup
-      if (mediaControllerCleanup.current) {
-        mediaControllerCleanup.current();
+        // Get QR code for the game
+        // Note: We'll need to get the PIN from the game state first
+        // This will be updated when we receive the state via WebSocket
+
+        setLoading(false);
+      } catch (err) {
+        console.error('Failed to initialize screen:', err);
+        setError(err instanceof Error ? err.message : 'Failed to initialize screen');
+        setLoading(false);
       }
     };
+
+    initScreen();
   }, []);
 
-  // Handle pack changes
-  const handlePackChange = async (packUrl: string) => {
-    if (mediaEngine) {
-      try {
-        await mediaEngine.setPack(packUrl);
-        setCurrentPack(packUrl);
-        console.log("Switched to pack:", packUrl);
-      } catch (err) {
-        console.error("Failed to switch pack:", err);
-      }
-    }
-  };
-
-  // Socket connection and media controller
+  // WebSocket connection for real-time updates
   useEffect(() => {
-    if (!token || !mediaEngine) return;
+    if (!token || loading) return;
 
     const socket = connectSocket("/screen", token);
 
-    // Setup socket events
-    socket.on("connect", () => setConnected(true));
-    socket.io.on("reconnect_attempt", () => setConnected(false));
-    socket.io.on("reconnect", () => setConnected(true));
-    socket.on("state:update", (data) => {});
-
-    // Visual state updates (keep existing)
-    socket.on("draw:next", (data) => {
-      setCurrent(data.value);
-      setRecent((r) => [...r, data.value]);
+    // Connection handlers
+    socket.on("connect", () => {
+      console.log("Screen connected to server");
+      setConnected(true);
     });
 
-    socket.on("claim:result", (payload: any) => {
-      setWin(payload);
-      setShowWin(true);
-      setTimeout(() => setShowWin(false), 5000);
+    socket.on("disconnect", () => {
+      console.log("Screen disconnected from server");
+      setConnected(false);
     });
 
-    // Attach media controller for audio
-    const cleanup = attachMediaController(socket, mediaEngine);
-    mediaControllerCleanup.current = cleanup;
+    socket.io.on("reconnect_attempt", () => {
+      setConnected(false);
+    });
 
+    socket.io.on("reconnect", () => {
+      setConnected(true);
+    });
+
+    // Game state updates
+    socket.on("state:update", (data: any) => {
+      console.log("State update received:", data);
+      setGameState(prev => ({
+        ...prev,
+        status: mapStatus(data.status),
+        pin: typeof data.pin === 'string' ? data.pin : prev.pin,
+        drawnNumbers: Array.isArray(data.drawnNumbers) ? data.drawnNumbers : prev.drawnNumbers,
+        players: (() => {
+          const roster = Array.isArray(data.playerRoster)
+            ? data.playerRoster
+            : Array.isArray(data.players)
+              ? data.players
+              : prev.players;
+          return Array.isArray(roster) ? roster.map(normalizePlayer) : prev.players;
+        })(),
+        playerCount: typeof data.playerCount === 'number'
+          ? data.playerCount
+          : (Array.isArray(data.playerRoster) ? data.playerRoster.length : prev.playerCount),
+        countdownState: (() => {
+          if (data.countdownState) {
+            const durationSeconds = typeof data.countdownState.durationSeconds === 'number'
+              ? data.countdownState.durationSeconds
+              : prev.countdownState?.durationSeconds ?? 0;
+
+            return {
+              active: Boolean(data.countdownState.active),
+              startedAt: data.countdownState.startedAt ? new Date(data.countdownState.startedAt).getTime() : undefined,
+              durationSeconds,
+              message: data.countdownState.message ?? prev.countdownState?.message,
+            };
+          }
+
+          return prev.countdownState;
+        })(),
+      }));
+
+      // If we got a PIN and don't have QR code yet, fetch it
+      if (data.pin && !qrCode) {
+        getGameQRCode(data.pin)
+          .then(qr => setQrCode(qr))
+          .catch(err => console.error('Failed to get QR code:', err));
+      }
+
+      // Handle status changes with audio cues
+      if (data.status && mapStatus(data.status) !== gameState.status) {
+        const newStatus = mapStatus(data.status);
+        switch (newStatus) {
+          case 'waiting':
+            audioController.current.handleMediaCue('music:lobby');
+            break;
+          case 'countdown':
+            audioController.current.handleMediaCue('music:countdown');
+            audioController.current.handleMediaCue('voice:countdown');
+            break;
+          case 'active':
+            audioController.current.handleMediaCue('music:game');
+            audioController.current.handleMediaCue('sfx:game:start');
+            break;
+          case 'paused':
+            audioController.current.handleMediaCue('sfx:game:pause');
+            break;
+          case 'completed':
+            audioController.current.handleMediaCue('sfx:game:complete');
+            break;
+        }
+      }
+    });
+
+    // Handle player join events
+    (socket as any).on("player:join", (data: { player: any; totalCount?: number }) => {
+      const joinedPlayer = normalizePlayer(data.player);
+      console.log("Player joined:", joinedPlayer);
+      setGameState(prev => {
+        const existing = prev.players.filter(p => p.id !== joinedPlayer.id);
+        const updatedPlayers = [...existing, joinedPlayer];
+        return {
+          ...prev,
+          players: updatedPlayers,
+          playerCount: typeof data.totalCount === 'number' ? data.totalCount : updatedPlayers.length,
+        };
+      });
+
+      setNewPlayerJoined(joinedPlayer);
+      audioController.current.handleMediaCue('sfx:player:join');
+
+      setTimeout(() => {
+        setNewPlayerJoined(null);
+      }, 3000);
+    });
+
+    // Handle player leave events
+    (socket as any).on("player:leave", (data: { playerId: string; totalCount?: number }) => {
+      console.log("Player left:", data.playerId);
+      setGameState(prev => ({
+        ...prev,
+        players: prev.players.filter(p => p.id !== data.playerId),
+        playerCount: typeof data.totalCount === 'number' ? data.totalCount : Math.max(prev.playerCount - 1, 0)
+      }));
+
+      audioController.current.handleMediaCue('sfx:player:leave');
+    });
+
+    // Handle new number draws
+    socket.on("draw:next", (data: { value: number; letter?: string }) => {
+      console.log("New number drawn:", data.value);
+      setGameState(prev => ({
+        ...prev,
+        currentNumber: data.value,
+        drawnNumbers: [...prev.drawnNumbers, data.value]
+      }));
+
+      // Play number draw sound
+      audioController.current.handleMediaCue('sfx:number:draw');
+    });
+
+    // Handle direct media cue events from server
+    (socket as any).on("media:cue", (data: { type: string; packId?: string; cueKey?: string; volume?: number; fadeInMs?: number }) => {
+      console.log("Media cue received:", data);
+      audioController.current.handleMediaCue(data.type, data.volume, data.fadeInMs);
+    });
+
+    // Request initial state
     return () => {
-      cleanup();
       socket.close();
     };
-  }, [token, gameId, mediaEngine]);
+  }, [token, loading, gameState.gameId, qrCode]);
 
-  // Audio unlock handler
-  const handleAudioUnlock = async () => {
-    await audioUnlock.unlock();
-    if (mediaEngine) {
-      await mediaEngine.resume();
-    }
-  };
-
-  // Fullscreen and chroma key hotkeys
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "f") {
-        document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
-      }
-      if (e.key.toLowerCase() === "c") {
-        document.body.classList.toggle("bg-[#00FF00]");
-      }
-      // Dev test keys
-      if (import.meta.env.DEV) {
-        if (e.key === "1") mediaEngine?.playNumber(Math.floor(Math.random() * 75) + 1);
-        if (e.key === "2") mediaEngine?.playSfx('bingo');
-        if (e.key === "3") mediaEngine?.musicToggle();
-        if (e.key === "4") playIntro();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [mediaEngine, playIntro]);
-
-  return (
-    <div className="relative min-h-full px-6 py-10">
-      <Background />
-      <ReconnectingBar show={!connected} />
-
-      {/* Audio Unlock Overlay */}
-      <AudioUnlockOverlay
-        show={!audioUnlock.unlocked}
-        onUnlock={handleAudioUnlock}
-      />
-
-      {/* Intro Video */}
-      <IntroVideoComponent />
-
-      {/* Media Controls */}
-      <MediaControls
-        engine={mediaEngine}
-        packs={mediaPacks}
-        currentPack={currentPack}
-        onPackChange={handlePackChange}
-      />
-
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto">
-        <div className="text-center text-sm opacity-60">
-          Game #{gameId} • Press <kbd>F</kbd> for Fullscreen • <kbd>C</kbd> Chroma
-          {import.meta.env.DEV && " • Dev: 1=Number 2=Bingo 3=Music 4=Intro"}
-        </div>
-        <div className="mt-4">
-          <AnimatePresence mode="wait">
-            <CurrentNumber key={current ?? -1} value={current} />
-          </AnimatePresence>
-          <RecentStrip recent={recent} />
+  // Loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+        <div className="text-white text-center">
+          <div className="text-3xl font-bold mb-4">Initializing Big Screen...</div>
+          <div className="text-lg opacity-70">Please wait</div>
         </div>
       </div>
+    );
+  }
 
-      <WinnerBanner show={showWin} payload={win} onHide={() => setShowWin(false)} />
-    </div>
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
+        <div className="bg-red-900/50 border border-red-500 rounded-lg p-8 max-w-md">
+          <div className="text-red-300 text-xl font-bold mb-2">Screen Initialization Failed</div>
+          <div className="text-white">{error}</div>
+          <div className="text-sm text-gray-400 mt-4">
+            This screen must be launched from the game console with a valid token.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Disconnected warning banner
+  const DisconnectedBanner = () => {
+    if (connected) return null;
+    return (
+      <div className="fixed top-0 left-0 right-0 bg-yellow-600/90 text-white px-4 py-2 text-center z-50">
+        <div className="font-semibold">Connection Lost - Attempting to reconnect...</div>
+      </div>
+    );
+  };
+
+  // Handle new player dismissal
+  const handleNewPlayerDismissed = () => {
+    setNewPlayerJoined(null);
+  };
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      audioController.current.dispose();
+    };
+  }, []);
+
+  // Main display
+  return (
+    <>
+      <DisconnectedBanner />
+      <BigScreenDisplay
+        gamePin={gameState.pin}
+        currentNumber={gameState.currentNumber}
+        recentNumbers={gameState.drawnNumbers}
+        playerCount={gameState.playerCount}
+        gameStatus={gameState.status}
+        qrCodeUrl={qrCode}
+        players={gameState.players}
+        countdownState={gameState.countdownState}
+        newPlayerJoined={newPlayerJoined}
+        onNewPlayerDismissed={handleNewPlayerDismissed}
+      />
+    </>
   );
 }

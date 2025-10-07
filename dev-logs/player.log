@@ -1,0 +1,14 @@
+ 
+
+> @bingo/player@1.0.0 dev C:\Projects\Bingo\apps\player
+> vite --port 5175
+
+
+  [32m[1mVITE[22m v5.4.20[39m  [2mready in [0m[1m293[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5175[22m/[39m
+[2m  [32m➜[39m  [1mNetwork[22m[2m: use [22m[1m--host[22m[2m to expose[22m
+[2m[32m  ➜[39m[22m[2m  press [22m[1mh + enter[22m[2m to show help[22m
+C:\Projects\Bingo\apps\player:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @bingo/player@1.0.0 dev: `vite --port 5175`
+Exit status 3221225786

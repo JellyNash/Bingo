@@ -14,14 +14,43 @@ import { prisma } from './prisma.js';
 import { publishClaimEvent, publishDrawEvent, publishGameState } from './events.pubsub.js';
 import { config } from '../config.js';
 
-const PATTERN_MASKS: Record<string, number> = (() => {
-  const base = standardPatterns();
-  const normalized: Record<string, number> = {};
-  for (const [key, value] of Object.entries(base)) {
-    normalized[key.toUpperCase()] = value as number;
+const PATTERN_MASKS: Record<string, number> = standardPatterns();
+
+const LEGACY_PATTERN_ALIASES: Record<string, string> = {
+  ROW1: 'ROW_1',
+  ROW2: 'ROW_2',
+  ROW3: 'ROW_3',
+  ROW4: 'ROW_4',
+  ROW5: 'ROW_5',
+  COL1: 'COL_1',
+  COL2: 'COL_2',
+  COL3: 'COL_3',
+  COL4: 'COL_4',
+  COL5: 'COL_5',
+  DIAG1: 'DIAGONAL_1',
+  DIAG2: 'DIAGONAL_2',
+  FOURCORNERS: 'FOUR_CORNERS',
+};
+
+function normalizePatternName(pattern: string): string {
+  if (!pattern) return pattern;
+  const base = pattern.replace(/[-\s]/g, '').toUpperCase();
+  if (PATTERN_MASKS[base]) {
+    return base;
   }
-  return normalized;
-})();
+
+  const alias = LEGACY_PATTERN_ALIASES[base];
+  if (alias && PATTERN_MASKS[alias]) {
+    return alias;
+  }
+
+  const withUnderscore = pattern.replace(/[-\s]/g, '_').toUpperCase();
+  if (PATTERN_MASKS[withUnderscore]) {
+    return withUnderscore;
+  }
+
+  return pattern;
+}
 
 function numberToLetter(num: number): 'B' | 'I' | 'N' | 'G' | 'O' {
   if (num <= 15) return 'B';
@@ -150,7 +179,7 @@ export class OrchestratorAdapter {
 
       await publishDrawEvent(gameId, {
         seq: draw.sequence,
-        value: draw.number,
+        number: draw.number,
       });
 
       await publishGameState(gameId);
@@ -216,7 +245,7 @@ export class OrchestratorAdapter {
     pattern: string;
   }): Promise<ClaimValidationResult> {
     const { gameId, playerId, claimId, pattern } = params;
-    const targetPattern = pattern.toUpperCase();
+    const targetPattern = normalizePatternName(pattern);
     const maskTarget = PATTERN_MASKS[targetPattern];
     if (!maskTarget) {
       return { valid: false, strikeApplied: false, strikes: 0, denialReason: 'Unsupported pattern' };

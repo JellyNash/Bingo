@@ -10,7 +10,7 @@ const tracer = trace.getTracer('api');
 
 export default async function gamesDraw(fastify: FastifyInstance) {
   fastify.post('/games/:gameId/draw', {
-    preHandler: [fastify.authenticate, fastify.authorize('host')],
+    preHandler: [fastify.createGameMasterAuth()],
   }, async (request, reply) => {
     const { gameId } = paramsSchema.parse(request.params);
 
@@ -27,11 +27,11 @@ export default async function gamesDraw(fastify: FastifyInstance) {
       span.recordException(error);
       span.setStatus({ code: 2, message: error.message });
       if (error.message === 'Game not found') {
-        reply.code(404).send({ error: 'not_found', message: 'Game not found' });
+        reply.status(404).send({ error: 'not_found', message: 'Game not found' });
       } else if (error.message === 'Game is not active') {
-        reply.code(400).send({ error: 'invalid_state', message: 'Game not active' });
+        reply.status(400).send({ error: 'invalid_state', message: 'Game not active' });
       } else {
-        reply.code(400).send({ error: 'draw_failed', message: error.message });
+        reply.status(400).send({ error: 'draw_failed', message: error.message });
       }
     } finally {
       span.end();

@@ -11,12 +11,31 @@
     "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
+    "test:unit": "vitest run --coverage",
+    "test:integration": "cross-env NODE_ENV=test vitest run tests/integration --coverage",
+    "test:e2e": "playwright test --reporter=list,html",
+    "test:all": "pnpm -r build && pnpm test:unit && pnpm test:integration && pnpm test:e2e",
+    "load:rest": "artillery run tests/load/rest.artillery.yml",
+    "load:ws": "artillery run tests/load/socketio.artillery.yml",
+    "chaos:redis": "bash tests/chaos/scripts/bounce-redis.sh",
+    "chaos:realtime": "bash tests/chaos/scripts/bounce-realtime.sh",
+    "chaos:api": "bash tests/chaos/scripts/bounce-api.sh",
+    "analytics:rollup": "tsx backend/analytics/rollup.ts --since 1",
+    "analytics:rollup:summary": "tsx backend/analytics/rollup.ts --summary",
+    "test:analytics": "vitest run tests/integration/analytics.ingest.spec.ts",
     "lint": "pnpm -r lint",
     "format": "pnpm -r format",
     "clean": "pnpm -r clean && rm -rf node_modules"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0"
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "artillery": "^2.0.20",
+    "cross-env": "^7.0.3",
+    "supertest": "^6.3.4",
+    "tsx": "^4.20.5",
+    "vitest": "^2.1.9"
   },
   "packageManager": "pnpm@8.15.0"
 }

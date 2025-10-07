@@ -76,14 +76,17 @@
 	# Compression
 	encode zstd gzip
 
-	# Security headers
-	header {
-		# Disable FLoC
-		Permissions-Policy "interest-cohort=()"
-
-		# Security headers for cloud deployment
-		{$SECURITY_HEADERS}
+	# Import security headers based on environment
+	@offline {
+		expression {$NODE_ENV} != "production"
 	}
+	@production {
+		expression {$NODE_ENV} == "production"
+	}
+
+	# Apply appropriate security headers
+	import snippets/security_headers.caddy header_common @offline
+	import snippets/security_headers.caddy header_cloud @production
 
 	# TLS configuration (auto-HTTPS in production)
 	@production {

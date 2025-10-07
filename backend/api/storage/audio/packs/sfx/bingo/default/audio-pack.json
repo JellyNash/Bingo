@@ -1,0 +1,39 @@
+{
+  "packId": "default-bingo-sfx",
+  "name": "Default Bingo Sound Effects",
+  "description": "Sound effects for bingo claims and game events",
+  "type": "SFX",
+  "scope": "BINGO",
+  "version": "1.0.0",
+  "author": "Bingo Platform",
+  "metadata": {
+    "style": "classic",
+    "volume": "medium"
+  },
+  "assets": [
+    {
+      "filename": "bingo-claim.wav",
+      "cueKey": "bingo-claim",
+      "duration": 2.0,
+      "mimeType": "audio/wav"
+    },
+    {
+      "filename": "claim-valid.wav",
+      "cueKey": "bingo-valid",
+      "duration": 3.0,
+      "mimeType": "audio/wav"
+    },
+    {
+      "filename": "claim-invalid.wav",
+      "cueKey": "bingo-invalid",
+      "duration": 2.5,
+      "mimeType": "audio/wav"
+    },
+    {
+      "filename": "winner-announced.wav",
+      "cueKey": "winner-announced",
+      "duration": 5.0,
+      "mimeType": "audio/wav"
+    }
+  ]
+}

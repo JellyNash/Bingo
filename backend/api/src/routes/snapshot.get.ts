@@ -19,7 +19,7 @@ export default async function snapshotRoute(fastify: FastifyInstance) {
         claims: true,
       },
     });
-    if (!game) return reply.code(404).send({ error: 'not_found', message: 'Game not found' });
+    if (!game) return reply.status(404).send({ error: 'not_found', message: 'Game not found' });
 
     reply.send(
       buildSnapshot({

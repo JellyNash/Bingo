@@ -1,13 +1,12 @@
 import { io, Socket } from "socket.io-client";
 
 export interface ServerToClientEvents {
-  "state:update": (data: { connected: boolean; ns: string; role?: string; room: string }) => void;
-  "draw:next": (data: { seq: number; value: number }) => void;
+  "state:update": (data: any) => void;
+  "draw:next": (data: { seq?: number; value: number; letter?: string }) => void;
   "claim:result": (data: any) => void;
-  "media:cue": (data: {
-    type: 'number' | 'bingo' | 'stinger' | 'intro' | 'music:start' | 'music:stop' | 'music:toggle';
-    number?: number;
-  }) => void;
+  "media:cue": (data: { type: string; packId?: string; cueKey?: string; volume?: number; fadeInMs?: number }) => void;
+  "player:join": (data: { player: any; totalCount?: number }) => void;
+  "player:leave": (data: { playerId: string; totalCount?: number }) => void;
 }
 
 export interface ClientToServerEvents {}

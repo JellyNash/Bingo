@@ -5,7 +5,7 @@ import { prisma } from '../services/prisma.js';
 import { orchestrator } from '../services/orchestrator.adapter.js';
 import { getIdempotentResponse, saveIdempotentResponse } from '../services/idempotency.js';
 import { mapCard, mapPlayer, buildSnapshot } from '../utils/mappers.js';
-import { publishGameState } from '../services/events.pubsub.js';
+import { publishGameState, publishPlayerJoin } from '../services/events.pubsub.js';
 import { genOpaqueToken, sha256Hex } from '../utils/tokens.js';
 
 const tracer = trace.getTracer('api');
@@ -26,12 +26,12 @@ export default async function joinRoute(fastify: FastifyInstance) {
     if (body.idempotencyKey) {
       const cached = await getIdempotentResponse(body.idempotencyKey);
       if (cached) {
-        reply.code(cached.statusCode).headers(cached.headers ?? {}).send(cached.body);
+        reply.status(cached.statusCode).headers(cached.headers ?? {}).send(cached.body);
         return;
       }
     }
 
-    await fastify.rateLimit.enforceJoin(request, reply);
+    await (fastify as any).rateLimit.enforceJoin(request, reply);
     if (reply.sent) return;
 
     const span = tracer.startSpan('player.join');
@@ -39,28 +39,28 @@ export default async function joinRoute(fastify: FastifyInstance) {
     if (!game) {
       span.setStatus({ code: 2, message: 'Game unavailable' });
       span.end();
-      return reply.code(404).send({ error: 'game_not_found', message: 'Game not found' });
+      return reply.status(404).send({ error: 'game_not_found', message: 'Game not found' });
     }
 
     const joinableStatuses = game.allowLateJoin ? ['LOBBY', 'OPEN', 'ACTIVE'] : ['LOBBY', 'OPEN'];
     if (!joinableStatuses.includes(game.status)) {
       span.setStatus({ code: 2, message: 'Game unavailable' });
       span.end();
-      return reply.code(404).send({ error: 'game_not_joinable', message: 'Game not accepting players' });
+      return reply.status(404).send({ error: 'game_not_joinable', message: 'Game not accepting players' });
     }
 
     const playerCount = await prisma.player.count({ where: { gameId: game.id } });
     if (playerCount >= game.maxPlayers) {
       span.setStatus({ code: 2, message: 'Game full' });
       span.end();
-      return reply.code(400).send({ error: 'game_full', message: 'Game has reached capacity' });
+      return reply.status(400).send({ error: 'game_full', message: 'Game has reached capacity' });
     }
 
     const existingNickname = await prisma.player.findFirst({ where: { gameId: game.id, nickname: body.nickname } });
     if (existingNickname) {
       span.setStatus({ code: 2, message: 'Nickname taken' });
       span.end();
-      return reply.code(400).send({ error: 'nickname_taken', message: 'Nickname already in use' });
+      return reply.status(400).send({ error: 'nickname_taken', message: 'Nickname already in use' });
     }
 
     const player = await prisma.player.create({
@@ -71,6 +71,7 @@ export default async function joinRoute(fastify: FastifyInstance) {
         userAgent: request.headers['user-agent'],
       },
     });
+    const totalPlayers = playerCount + 1;
 
     const { cardId } = await orchestrator.generateCard({
       gameId: game.id,
@@ -80,7 +81,7 @@ export default async function joinRoute(fastify: FastifyInstance) {
 
     // Generate secure tokens
     const resumeToken = genOpaqueToken(32);
-    const sessionToken = fastify.jwt.sign(
+    const sessionToken = await fastify.jwt.sign(
       { sub: player.id, gameId: game.id, role: 'player' },
       { expiresIn: '12h' }
     );
@@ -134,12 +135,16 @@ export default async function joinRoute(fastify: FastifyInstance) {
     span.setAttribute('player.id', player.id);
     span.end();
 
+    // Publish player join event
+    await publishPlayerJoin(game.id, player, totalPlayers);
+
+    // Publish updated game state
     await publishGameState(game.id);
 
     if (body.idempotencyKey) {
       await saveIdempotentResponse(body.idempotencyKey, { statusCode: 201, body: responseBody });
     }
 
-    reply.code(201).send(responseBody);
+    reply.status(201).send(responseBody);
   });
 }

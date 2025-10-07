@@ -65,8 +65,8 @@ export async function trackServer(
         env: event.env,
         traceId: null,
         dnt: false,
-        ctx: event.ctx,
-        props: event.props,
+        ctx: event.ctx as any,
+        props: event.props as any,
         sigValid: null // Server events are trusted
       }
     });

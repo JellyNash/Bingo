@@ -53,14 +53,16 @@ const metricsPlugin = fp(async (fastify: any) => {
   });
 
   fastify.addHook('onResponse', async (request: any, reply: any) => {
-    if (!request.routerPath) return;
-    const route = request.routerPath;
+    const route = request.routeOptions?.url;
+    if (!route) return;
     requestCounter.inc({
       route,
       method: request.method,
       status_code: reply.statusCode,
     });
-    const elapsed = Number(process.hrtime.bigint() - (request as any)._startTime) / 1_000_000;
+    const startTime = (request as any)._startTime as bigint;
+    const diff = process.hrtime.bigint() - startTime;
+    const elapsed = Number(diff) / 1_000_000;
     requestDuration.observe({ route, method: request.method }, elapsed);
   });
 

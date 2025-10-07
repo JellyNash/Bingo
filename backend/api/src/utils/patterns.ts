@@ -32,9 +32,10 @@ export function patternEligible(
   const cells = PATTERNS[pattern];
   if (!cells) return false;
   return cells.every(([r, c]) => {
-    if (r === 2 && c === 2) return true;
+    const position = r * 5 + c;
+    if (position === 12) return true;
     const value = grid[r][c];
-    return Boolean(marks[value] && drawnNumbers.has(value));
+    return Boolean(marks[String(position)] && drawnNumbers.has(value));
   });
 }
 

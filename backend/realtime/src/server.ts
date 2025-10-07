@@ -61,29 +61,54 @@ const pub = new Redis(REDIS_URL);
 const sub = new Redis(REDIS_URL);
 io.adapter(createAdapter(pub, sub));
 
-// JWT auth for sockets
-async function authMiddleware(socket: any, next: any) {
-  try {
-    const token = socket.handshake.auth?.token ?? socket.handshake.query?.token;
-    if (!token) {
+const NAMESPACE_CONFIG = {
+  "/player": "player",
+  "/screen": "screen",
+  "/console": "host",
+} as const;
+
+type NamespaceName = keyof typeof NAMESPACE_CONFIG;
+type NamespaceRole = typeof NAMESPACE_CONFIG[NamespaceName];
+
+function makeAuthMiddleware(requiredRole: NamespaceRole) {
+  return async (socket: any, next: any) => {
+    try {
+      const token = socket.handshake.auth?.token ?? socket.handshake.query?.token;
+      if (!token) {
+        metrics.authFailures++;
+        return next(new Error("unauthorized"));
+      }
+
+      const payload: any = await app.jwt.verify(token);
+      const payloadRole = payload?.role as NamespaceRole | undefined;
+      const payloadGame = payload?.gameId as string | undefined;
+
+      if (!payloadRole || (payloadRole !== requiredRole && !(requiredRole === "screen" && payloadRole === "host"))) {
+        metrics.authFailures++;
+        return next(new Error("forbidden"));
+      }
+
+      if (!payloadGame) {
+        metrics.authFailures++;
+        return next(new Error("invalid token"));
+      }
+
+      (socket as any).ctx = payload;
+      socket.data.user = payload;
+      next();
+    } catch (err) {
       metrics.authFailures++;
-      return next(new Error("no token"));
+      next(new Error("auth failed"));
     }
-    const payload = await app.jwt.verify(token);
-    (socket as any).ctx = payload; // { gameId, playerId?, role? }
-    next();
-  } catch {
-    metrics.authFailures++;
-    next(new Error("auth failed"));
-  }
+  };
 }
 
-const NAMESPACES = ["/player", "/screen", "/console"] as const;
+const namespaceNames = Object.keys(NAMESPACE_CONFIG) as NamespaceName[];
 
 // Build namespaces; join room per game
-function makeNamespace(name: string) {
+function makeNamespace(name: NamespaceName, requiredRole: NamespaceRole) {
   const nsp = io.of(name);
-  nsp.use(authMiddleware);
+  nsp.use(makeAuthMiddleware(requiredRole));
   nsp.on("connection", (socket) => {
     metrics.connections++;
     const { gameId, role } = (socket as any).ctx ?? {};
@@ -102,7 +127,10 @@ function makeNamespace(name: string) {
   });
   return nsp;
 }
-NAMESPACES.forEach(makeNamespace);
+
+namespaceNames.forEach((ns) => {
+  makeNamespace(ns, NAMESPACE_CONFIG[ns]);
+});
 
 // Redis broker subscription → broadcast to ALL namespaces
 const brokerSub = new Redis(REDIS_URL);
@@ -115,7 +143,7 @@ brokerSub.on("message", (_channel: string, message: string) => {
     const { room, event, data } = JSON.parse(message);
     metrics.eventsReceived++;
     let delivered = 0;
-    for (const ns of NAMESPACES) {
+    for (const ns of namespaceNames) {
       const sockets = io.of(ns).to(room);
       sockets.emit(event, data);
       delivered++;

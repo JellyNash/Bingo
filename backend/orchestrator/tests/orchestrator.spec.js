@@ -56,12 +56,12 @@ describe("Claim validation", () => {
         const prng = prngFromSeedHex(seed);
         const card = generateCard("g4", "p1", "k", prng);
         const pats = standardPatterns();
-        // simulate draw of all numbers in row1 (r=0)
+        // simulate draw of all numbers in ROW_1 (r=0)
         const rowNums = [0, 1, 2, 3, 4].map(i => card.grid[i]).filter(Boolean);
         const drawn = new Set(rowNums);
         const mask = marksFromDraws(card, drawn);
         const res = validateClaim(mask, pats);
-        expect(res.winningPattern).toMatch(/^row/);
+        expect(res.winningPattern).toBe('ROW_1');
     });
     it("penalty increments with cooldown", () => {
         const pen = applyPenalty(2, { strikesAllowed: 3, cooldownMs: 30000, rateLimitLockoutMs: 120000 });

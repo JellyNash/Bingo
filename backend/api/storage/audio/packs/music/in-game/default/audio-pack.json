@@ -1,0 +1,33 @@
+{
+  "packId": "default-in-game-music",
+  "name": "Default In-Game Music",
+  "description": "Default background music during active gameplay",
+  "type": "MUSIC",
+  "scope": "IN_GAME",
+  "version": "1.0.0",
+  "author": "Bingo Platform",
+  "metadata": {
+    "genre": "upbeat",
+    "mood": "exciting"
+  },
+  "assets": [
+    {
+      "filename": "game-start.mp3",
+      "cueKey": "game-start",
+      "duration": 5.0,
+      "mimeType": "audio/mpeg"
+    },
+    {
+      "filename": "game-background.mp3",
+      "cueKey": "game-loop",
+      "duration": 180.0,
+      "mimeType": "audio/mpeg"
+    },
+    {
+      "filename": "game-end.mp3",
+      "cueKey": "game-end",
+      "duration": 10.0,
+      "mimeType": "audio/mpeg"
+    }
+  ]
+}

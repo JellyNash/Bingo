@@ -11,6 +11,11 @@ out/
 
 # Testing
 coverage/
+reports/
+test-results/
+playwright-report/
+playwright/.cache/
+.nyc_output/
 
 # Environment
 .env
@@ -81,4 +86,5 @@ secrets/
 # Cache
 .cache/
 .parcel-cache/
-.vite/
+.vite/.code/
+modelcontext.json

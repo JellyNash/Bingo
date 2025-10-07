@@ -23,7 +23,7 @@ const rateLimitPlugin = fp(async (fastify: any) => {
     request: FastifyRequest,
     reply: FastifyReply,
   ) {
-    const identity = type === 'join' ? request.ip : `${request.user?.sub ?? request.ip}`;
+    const identity = type === 'join' ? request.ip : `${(request.user as any)?.sub ?? request.ip}`;
     const { limit, windowMs, lockoutMs } = (() => {
       if (type === 'join') {
         return { limit: config.rateLimitJoinPerMin, windowMs: MINUTE, lockoutMs: undefined as number | undefined };
@@ -41,7 +41,7 @@ const rateLimitPlugin = fp(async (fastify: any) => {
     const key = `${type}:${identity}`;
     const result = await consumeRateLimit(key, limit, windowMs, lockoutMs);
     if (!result.allowed) {
-      reply.code(429).send({
+      reply.status(429).send({
         error: 'rate_limited',
         message:
           type === 'join'
