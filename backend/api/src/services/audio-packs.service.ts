@@ -11,6 +11,8 @@ import { AudioManifestValidator, type AudioManifest } from './audio-manifest.val
 import type { AudioPackType as AudioPackTypeT, AudioScope as AudioScopeT } from '@prisma/client';
 import PrismaPkg from '@prisma/client';
 const { AudioPackType, AudioScope } = PrismaPkg as any;
+type AudioPackType = AudioPackTypeT;
+type AudioScope = AudioScopeT;
 
 // Types
 export interface UploadedFile {

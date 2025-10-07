@@ -36,44 +36,43 @@ export type AudioManifest = any;
 export type AudioAssetData = any;
 
 // Required cue keys for different pack types and scopes
-const REQUIRED_CUE_KEYS: Record<AudioPackTypeT, Record<AudioScopeT, string[]>> = {
-  [AudioPackType.MUSIC]: {
-    [AudioScope.LOBBY]: ['lobby-start', 'lobby-loop'],
-    [AudioScope.IN_GAME]: ['game-start', 'game-loop', 'game-end'],
-    [AudioScope.JOIN]: [], // Music doesn't have join-specific cues
-    [AudioScope.BINGO]: [], // Music doesn't have bingo-specific cues
-    [AudioScope.COUNTDOWN]: [], // Music doesn't have countdown-specific cues
-    [AudioScope.NUMBERS]: [], // Music doesn't have number-specific cues
+const REQUIRED_CUE_KEYS = {
+  MUSIC: {
+    LOBBY: ['lobby-start', 'lobby-loop'],
+    IN_GAME: ['game-start', 'game-loop', 'game-end'],
+    JOIN: [],
+    BINGO: [],
+    COUNTDOWN: [],
+    NUMBERS: [],
   },
-  [AudioPackType.SFX]: {
-    [AudioScope.LOBBY]: ['player-join', 'player-leave', 'game-starting'],
-    [AudioScope.IN_GAME]: ['number-draw', 'game-pause', 'game-resume', 'game-complete'],
-    [AudioScope.JOIN]: ['player-join', 'join-success', 'join-error'],
-    [AudioScope.BINGO]: ['bingo-claim', 'bingo-valid', 'bingo-invalid', 'winner-announced'],
-    [AudioScope.COUNTDOWN]: ['countdown-tick', 'countdown-final', 'countdown-complete'],
-    [AudioScope.NUMBERS]: [], // SFX doesn't have number-specific cues
+  SFX: {
+    LOBBY: ['player-join', 'player-leave', 'game-starting'],
+    IN_GAME: ['number-draw', 'game-pause', 'game-resume', 'game-complete'],
+    JOIN: ['player-join', 'join-success', 'join-error'],
+    BINGO: ['bingo-claim', 'bingo-valid', 'bingo-invalid', 'winner-announced'],
+    COUNTDOWN: ['countdown-tick', 'countdown-final', 'countdown-complete'],
+    NUMBERS: [],
   },
-  [AudioPackType.VOICE]: {
-    [AudioScope.LOBBY]: ['welcome', 'game-starting', 'please-wait'],
-    [AudioScope.IN_GAME]: ['game-started', 'game-paused', 'game-resumed', 'congratulations'],
-    [AudioScope.JOIN]: ['welcome', 'please-enter-name', 'joined-successfully'],
-    [AudioScope.BINGO]: ['bingo-claimed', 'checking-card', 'winner-found', 'invalid-claim'],
-    [AudioScope.COUNTDOWN]: ['countdown-starting', 'get-ready'],
-    [AudioScope.NUMBERS]: [
-      // All 75 possible BINGO numbers
-      'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10',
-      'B11', 'B12', 'B13', 'B14', 'B15',
-      'I16', 'I17', 'I18', 'I19', 'I20', 'I21', 'I22', 'I23', 'I24', 'I25',
-      'I26', 'I27', 'I28', 'I29', 'I30',
-      'N31', 'N32', 'N33', 'N34', 'N35', 'N36', 'N37', 'N38', 'N39', 'N40',
-      'N41', 'N42', 'N43', 'N44', 'N45',
-      'G46', 'G47', 'G48', 'G49', 'G50', 'G51', 'G52', 'G53', 'G54', 'G55',
-      'G56', 'G57', 'G58', 'G59', 'G60',
-      'O61', 'O62', 'O63', 'O64', 'O65', 'O66', 'O67', 'O68', 'O69', 'O70',
-      'O71', 'O72', 'O73', 'O74', 'O75'
+  VOICE: {
+    LOBBY: ['welcome', 'game-starting', 'please-wait'],
+    IN_GAME: ['game-started', 'game-paused', 'game-resumed', 'congratulations'],
+    JOIN: ['welcome', 'please-enter-name', 'joined-successfully'],
+    BINGO: ['bingo-claimed', 'checking-card', 'winner-found', 'invalid-claim'],
+    COUNTDOWN: ['countdown-starting', 'get-ready'],
+    NUMBERS: [
+      'B1','B2','B3','B4','B5','B6','B7','B8','B9','B10',
+      'B11','B12','B13','B14','B15',
+      'I16','I17','I18','I19','I20','I21','I22','I23','I24','I25',
+      'I26','I27','I28','I29','I30',
+      'N31','N32','N33','N34','N35','N36','N37','N38','N39','N40',
+      'N41','N42','N43','N44','N45',
+      'G46','G47','G48','G49','G50','G51','G52','G53','G54','G55',
+      'G56','G57','G58','G59','G60',
+      'O61','O62','O63','O64','O65','O66','O67','O68','O69','O70',
+      'O71','O72','O73','O74','O75'
     ],
   },
-};
+} as const satisfies Record<AudioPackTypeT, Record<AudioScopeT, readonly string[]>>;
 
 export class AudioManifestValidator {
   /**
